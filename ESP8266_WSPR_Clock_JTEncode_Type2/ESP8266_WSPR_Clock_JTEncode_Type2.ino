@@ -2,8 +2,10 @@
 // WSPR Clock TX ESP8266.
 // 01/05/2021 Fred Krom, pe0fko
 //
-// Board: ESP8266	- LOLIN(WeMos) D1 R1
+// Board: ESP8266	- LOLIN(WeMos) D1 R1 & mini
+//					- CPU freq 80MHz
 //					- Set Debug port on Serial1
+//          - Erease Flash: "All Flash contents"
 //
 // "PE0FKO JO32 10"
 // SYMBOL: 3,3,2,0,2,2,0,2,3,0,2,2,3,3,3,0,0,0,1,2,0,1,2,3,1,1,3,2,0,2,2,2,2,0,1,2,0,1,2,3,2,0,0,0,2,0,3,0,1,1,2,2,1,3,0,3,0,2,2,3,1,2,1,0,0,2,0,3,1,2,1,0,3,0,3,0,1,0,0,1,0,0,1,2,3,1,2,0,2,3,1,2,3,2,3,2,0,2,1,2,0,0,0,0,1,2,2,1,2,0,1,3,1,2,3,1,2,0,1,3,2,3,0,2,0,3,1,1,2,0,2,2,2,1,0,1,2,2,3,3,0,2,2,2,2,2,2,1,1,2,1,0,1,3,2,2,0,1,3,2,2,2	
@@ -69,22 +71,23 @@
   #define   HAM_PREFIX      ""				// Prefix of the ham call
   #define   HAM_CALL        "PE0FKO"        // Ham radio call sign
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
-  #define   HAM_LOCATOR     "JO32"			// JO32CD 40OJ
-  #define   HAM_POWER       7				// Power TX in dBm
+  #define   HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
+  #define   HAM_POWER       8				// Power TX in dBm
+  #define	WIFI_SSID_01	"pe0fko_ziggo",	"NetwerkBeheer114"
 #elif defined LOC_PA_PE0FKO
   #define	WSPR_TX_FREQ	7040000UL		// 40m   7.040000 -  7.040200
   #define   HAM_PREFIX      "PA/"			// Prefix of the ham call
   #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
   #define   HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-  #define   HAM_POWER       7				// Power TX in dBm
+  #define   HAM_POWER       8				// Power TX in dBm
 #elif defined LOC_LA_MOTHE_40m
   #define	WSPR_TX_FREQ	7040000UL		// 40m   7.040000 -  7.040200
   #define   HAM_PREFIX      "F/"			// Prefix of the ham call
   #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
   #define   HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
-  #define   HAM_POWER       7				// Power TX in dBm
+  #define   HAM_POWER       8				// Power TX in dBm
 #elif defined LOC_LA_MOTHE_30m
   #define	WSPR_TX_FREQ	10140100UL		// 30m  10.140100 - 10.140300
   #define   HAM_PREFIX      "F/"			// Prefix of the ham call
@@ -118,9 +121,11 @@
 //#define	WSPR_TX_FREQ		144489900UL	// 2m  144.489900 - 144.490100
 #endif
 
+#ifndef WIFI_SSID_01
 #define		WIFI_SSID_01		"pe0fko_guest",	"Welkom-114"
 #define		WIFI_SSID_02		"pe0fko_ziggo",	"NetwerkBeheer114"
 #define		WIFI_SSID_03		"pe0fko-4g",	"NETWERKBEHEER"
+#endif
 
 #define		SI5351_FREQ_CORRECTION_01   (13126UL)
 #define		SI5351_FREQ_CORRECTION_02   (116000UL)
@@ -194,6 +199,7 @@ static  uint32_t		timer_display_auto_off;
 const   uint32_t		value_ntp_faild_reboot	= (5 * 60UL * 1000UL);		// 5 min
 static  uint32_t		timer_ntp_faild_reboot;
 volatile bool			ntp_time_sync;
+static	bool			wifi_connected_msg		= false;
 
 char					PASSWORD[32]			= "12345678";	// Will use the CPU ID for the password!
 float					temperature_now			= 0.0;
@@ -214,6 +220,8 @@ const int16_t      		wspr_sym_freq[4] = { TONE_SPACING(0), TONE_SPACING(1), TONE
 static  uint8_t			switchStatusLast		= HIGH;  // last status hardware switch
 enum {		DISPLAY_OFF,	DISPLAY_ON,	DISPLAY_NOTHING	};
 static  uint8_t			display_switch_status	= DISPLAY_ON;
+
+void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2=NULL);
 
 //
 // Make a plan to TX in one of the 30 slots (2min inteval in a hour).
@@ -274,10 +282,11 @@ void make_slot_plan(bool setup)
 		wspr_slot_tx[s1]   = WSPR_TX_TYPE_1;
 		wspr_slot_tx[s2]   = WSPR_TX_TYPE_1;
 #else
-		wspr_slot_tx[s0+0] = WSPR_TX_TYPE_2;	// Comp, no LOG
-		wspr_slot_tx[s0+1] = WSPR_TX_TYPE_3;	// TX LOG6
-		wspr_slot_tx[s1]   = WSPR_TX_TYPE_2;	// Comp, no LOG
-		wspr_slot_tx[s2]   = WSPR_TX_TYPE_2;	// Comp, no LOG
+		wspr_slot_tx[1]		= WSPR_TX_TYPE_3;	// TX locator 6
+		wspr_slot_tx[s0+0]	= WSPR_TX_TYPE_2;	// Comp, no locator
+//		wspr_slot_tx[s0+1]	= WSPR_TX_TYPE_3;	// TX locator 6
+		wspr_slot_tx[s1]	= WSPR_TX_TYPE_2;	// Comp, no locator
+		wspr_slot_tx[s2]	= WSPR_TX_TYPE_2;	// Comp, no locator
 #endif
 	}
 
@@ -294,6 +303,10 @@ void make_slot_plan(bool setup)
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....    
 //---------------------------------------------------------------------------------
+
+WiFiEventHandler wifiConnectHandler;
+WiFiEventHandler wifiDisconnectHandler;
+
 void setup() 
 {
 	randomSeed(0x1502);
@@ -338,15 +351,21 @@ void setup()
 	EEPROM.end();
 */
 
-	WiFi.disconnect();				// Debug!! Testing delete all wifi profiles onboard
-	WiFi.softAPdisconnect(true);	// TEST TEST TEST TEST TEST TEST TEST TEST
+//	WiFi.disconnect();				// Debug!! Testing delete all wifi profiles onboard
+//	WiFi.softAPdisconnect(true);	// TEST TEST TEST TEST TEST TEST TEST TEST
 	WiFi.hostname(HOSTNAME);
 
 	// Try to startup the WiFi Multi connection with the strongest AP found.
 	ssd1306_text(200, "WiFiMulti Init");
+#ifdef WIFI_SSID_01
 	wifiMulti.addAP(WIFI_SSID_01);
+#endif
+#ifdef WIFI_SSID_02
 	wifiMulti.addAP(WIFI_SSID_02);
+#endif
+#ifdef WIFI_SSID_03
 	wifiMulti.addAP(WIFI_SSID_03);
+#endif
 
 #if 0
 	PRINTF("Connecting .");
@@ -360,17 +379,12 @@ void setup()
 	ssd1306_text(200, "WM: Connected");
 #endif
 
+	// Don't save WiFi configuration in flash - optional
+	WiFi.persistent(false);
+	// Set WiFi to station mode
+	WiFi.mode(WIFI_STA);
 	// Keep WiFi connected
 	WiFi.setAutoReconnect(true);
-	WiFi.persistent(true);
-
-	// Tell us what network we're connected to
-	PRINTF("Connected to %s (IP:%s, RSSI %d)\n"
-		, WiFi.SSID().c_str()              
-		, WiFi.localIP().toString().c_str()           // Send the IP address of the ESP8266 to the computer
-		, WiFi.RSSI());
-  
-	ssd1306_wifi_page();
 
 #if 0
 	// autoconfiguration portal for wifi settings
@@ -405,7 +419,15 @@ void setup()
 #endif
 
 #ifdef FEATURE_OTA
-	init_ota();							// Init the Over The Air update server
+	PRINTF("OTA Initialize\n");
+	ssd1306_text(200, "OTA setup");
+	ArduinoOTA.onStart(ota_start);
+	ArduinoOTA.onProgress(ota_progress);
+	ArduinoOTA.onEnd(ota_stop);
+	ArduinoOTA.onError(ota_error);
+	ArduinoOTA.setHostname(HOSTNAME);
+	ArduinoOTA.setPassword("pe0fko");
+	ArduinoOTA.begin();
 #endif
 
 	init_si5351();						// Init the frequency generator SI5351
@@ -430,7 +452,12 @@ void setup()
 	PRINTF("CW Carrier on: %fMHz\n", (float)(WSPR_TX_FREQ + 100)/1e6);
 #endif
 
+	//Register event handlers
+	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
+	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
+
 	ssd1306_text(200, "Start looping");
+	Serial.println("==== Start looping ====");
 }
 
 #if 0
@@ -449,6 +476,13 @@ void configModeCallback (WiFiManager *myWiFiManager)
 */
 }
 #endif
+
+void onWifiConnect(const WiFiEventStationModeGotIP& event) {
+	wifi_connected_msg = true;
+}
+
+void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
+}
 
 void init_oneWire()
 {
@@ -524,19 +558,8 @@ static void ota_error(ota_error_t error)
 
 static void init_ota()
 {
-	PRINTF("OTA Initialize\n");
-	ssd1306_text(200, "OTA setup");
-
-	ArduinoOTA.onStart(ota_start);
-	ArduinoOTA.onProgress(ota_progress);
-	ArduinoOTA.onEnd(ota_stop);
-	ArduinoOTA.onError(ota_error);
-	ArduinoOTA.setHostname(HOSTNAME);
-	ArduinoOTA.setPassword("pe0fko");
-	ArduinoOTA.begin();
 }
 #endif
-
 
 static void init_si5351()
 {
@@ -564,7 +587,7 @@ static void init_si5351()
 void init_sntp_now()
 {
 	sntp_stop();
-	sntp_init();
+//	sntp_init();
 
 	settimeofday_cb(time_is_set);	// Call-back function
 //	sntp_set_time_sync_notification_cb(time_is_set);
@@ -572,7 +595,8 @@ void init_sntp_now()
 	// Google NTP servers
 	configTime("CET-1CEST,M3.5.0/2,M10.5.0/3", "time.google.com");
 
-	timer_ntp_faild_reboot = value_ntp_faild_reboot;
+//	timer_ntp_faild_reboot = value_ntp_faild_reboot;
+	timer_ntp_faild_reboot = millis();
 	ntp_time_sync = false;
 }
 
@@ -597,32 +621,49 @@ void loop()
 	ArduinoOTA.handle();
 #endif
 
-	// If still no WiFi then try again later...
-	if (wifiMulti.run() != WL_CONNECTED) 
-	{
-		ssd1306_text(200, "NO WiFi Con");
-//		PRINTF(">> WiFi Disconnected.....\n");
-//		delay(100);
+#ifdef FEATURE_mDNS
+	MDNS.update();
+#endif
 
-		// Disable the TX if there is no WiFi
-		if (wspr_symbol_index != 0)
-		{
-			wspr_symbol_index = WSPR_SYMBOL_COUNT;
-			wspr_bit_tx(0);
-		}
-		return;
+	// If still no WiFi then try again later...
+	switch(wifiMulti.run()) 
+	{
+		case WL_CONNECTED:
+		break;
+
+		case WL_CONNECT_FAILED:
+		ssd1306_text(200, "WiFi connect", "FAILED");
+		timer_display_auto_off = millis();	// Start the display ON timer
+		display_switch_status = DISPLAY_ON;
+		return;		// Return the loop!!
+
+		case WL_WRONG_PASSWORD:
+		ssd1306_text(200, "WiFi connect", "Error PASSWD");
+		return;		// Return the loop!!
+
+//		case WL_IDLE_STATUS:
+//		case WL_NO_SSID_AVAIL:
+//		case WL_DISCONNECTED:
+		default:
+		ssd1306_text(200, "WiFi connect", "ERROR");
+		return;		// Return the loop!!
+	}
+
+	// Tell us what network we're connected to
+	if (wifi_connected_msg) {
+		wifi_connected_msg = false;
+		ssd1306_wifi_page();
 	}
 
 	// Wait for the NTP time service is known!
 	if (!ntp_time_sync) 
 	{
-		ssd1306_text(200, "Waiting NTP");
-		PRINTF("ERROR: No time sync detected (NTP)...\n");
+		ssd1306_text(200, "Waiting", "NTP");
+		PRINTF("Waiting time sync detecting (NTP)...\n");
 		time_t now = time(nullptr);			// get UNIX timestamp 
-		Serial.print("System-time now: ");
+		Serial.print("System NTP time: ");
 		Serial.print(ctime(&now));
 		time(nullptr);
-		delay(1000);
 
 		if ((millis() - timer_ntp_faild_reboot) >= value_ntp_faild_reboot)
 		{
@@ -632,9 +673,10 @@ void loop()
 		}
 
 		sntp_init();
-		return;
+		return;		// Return the loop!!
 	}
 
+	// ----------------------------------------
 	// Now we have WiFi running,
 	// and a valid time from the NTP servers!
 
@@ -706,10 +748,10 @@ static 	int8_t 		last_sec	= -1;
 				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_1)		// Type 1 message: CALL, LOC4, dBm
 					call = HAM_CALL;
 
-				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_2)		// Type 2 message: p/CALL/s, dBm
+				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_2)		// Type 2 message: pre/CALL/suff, dBm
 					call = HAM_PREFIX HAM_CALL HAM_SUFFIX;
 
-				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_3)		// Type 3 message: <p/CALL/s>, LOC6, dBm
+				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_3)		// Type 3 message: hash <pre/CALL/suff>, LOC6, dBm
 					call = "<" HAM_PREFIX HAM_CALL HAM_SUFFIX ">";
 
 				if (call != NULL) 
@@ -895,25 +937,39 @@ uint16_t getFontStringWidth(const String& str)
 	return w;
 }
 
-void ssd1306_text(uint8_t delay_ms, const char* txt)
+void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2)
 {
 	ssd1306_background();
 
 	display.setTextSize(1);
-	uint16_t  w = getFontStringWidth(txt);
-	display.setCursor((display.width() - w) / 2 , 16);
-	display.print(txt);
+	if (txt1 != NULL)
+	{
+		uint16_t  w = getFontStringWidth(txt1);
+		display.setCursor((display.width() - w) / 2 , 16);
+		display.print(txt1);
+	}
+	if (txt2 != NULL)
+	{
+		uint16_t  w = getFontStringWidth(txt2);
+		display.setCursor((display.width() - w) / 2 , 16+16);
+		display.print(txt2);
+	}
 
 //	display.setCursor(8, 52);
 //	display.print(WiFi.SSID());              // Tell us what network we're connected to
 
 	display.display();
-	if (delay_ms > 0)
+	if (delay_ms >= 0)
 		delay(delay_ms);
 }
 
 void ssd1306_wifi_page()
 {
+	PRINTF("Connected to %s (IP:%s, RSSI %d)\n"
+		, WiFi.SSID().c_str()              
+		, WiFi.localIP().toString().c_str()           // Send the IP address of the ESP8266 to the computer
+		, WiFi.RSSI());
+  
 	ssd1306_background();
 	display.setTextSize(1);
 
