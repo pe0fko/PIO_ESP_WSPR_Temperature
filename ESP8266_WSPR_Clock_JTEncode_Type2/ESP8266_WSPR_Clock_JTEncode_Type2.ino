@@ -230,7 +230,8 @@ void make_slot_plan(bool setup)
 {
     // Clean the old slot plan.
     memset(wspr_slot_tx, WSPR_TX_NONE, WSPR_SLOTS_MAX);
-    memset(wspr_slot_band, random(20, 180), WSPR_SLOTS_MAX);
+	memset(wspr_slot_band, 100, WSPR_SLOTS_MAX);
+//	memset(wspr_slot_band, random(20, 180), WSPR_SLOTS_MAX);
 
 	if (setup)
 	{
@@ -283,10 +284,15 @@ void make_slot_plan(bool setup)
 		wspr_slot_tx[s2]   = WSPR_TX_TYPE_1;
 #else
 		wspr_slot_tx[1]		= WSPR_TX_TYPE_3;	// TX locator 6
-		wspr_slot_tx[s0+0]	= WSPR_TX_TYPE_2;	// Comp, no locator
-//		wspr_slot_tx[s0+1]	= WSPR_TX_TYPE_3;	// TX locator 6
+		wspr_slot_tx[s0]	= WSPR_TX_TYPE_2;	// Comp, no locator
 		wspr_slot_tx[s1]	= WSPR_TX_TYPE_2;	// Comp, no locator
 		wspr_slot_tx[s2]	= WSPR_TX_TYPE_2;	// Comp, no locator
+
+		// Select a frequncy for every transmission.
+    	wspr_slot_band[1]	= random(20, 180);
+    	wspr_slot_band[s0]	= random(20, 180);
+    	wspr_slot_band[s1]	= random(20, 180);
+    	wspr_slot_band[s2]	= random(20, 180);
 #endif
 	}
 
