@@ -30,6 +30,7 @@
 //	Using library ArduinoOTA at version 1.0 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/ArduinoOTA 
 /*/
 
+
 #define	LOC_PE0FKO
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
@@ -37,10 +38,10 @@
 //#define	LOC_LA_MOTHE_30m
 //#define	LOC_LA_MOTHE_20m
 
-#define		FEATURE_OTA
+//#define		FEATURE_OTA
 #define		FEATURE_mDNS
 //#define		FEATURE_CARRIER
-#define		FEATURE_1H_FAST_TX
+//#define		FEATURE_1H_FAST_TX
 //#define		FEATURE_PRINT_TIMESLOT
 
 #define	  EEPROM_VERSION  1
@@ -73,7 +74,7 @@
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
   #define   HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
   #define   HAM_POWER       8				// Power TX in dBm
-  #define	WIFI_SSID_01	"pe0fko_ziggo",	"NetwerkBeheer114"
+//  #define	WIFI_SSID_01	"pe0fko_ziggo",	"NetwerkBeheer114"
 #elif defined LOC_PA_PE0FKO
   #define	WSPR_TX_FREQ	7040000UL		// 40m   7.040000 -  7.040200
   #define   HAM_PREFIX      "PA/"			// Prefix of the ham call
@@ -124,7 +125,8 @@
 #ifndef WIFI_SSID_01
 #define		WIFI_SSID_01		"pe0fko_guest",	"Welkom-114"
 #define		WIFI_SSID_02		"pe0fko_ziggo",	"NetwerkBeheer114"
-#define		WIFI_SSID_03		"pe0fko-4g",	"NETWERKBEHEER"
+//#define		WIFI_SSID_03		"pe0fko-4g",	"NETWERKBEHEER"
+#define		WIFI_SSID_03		"pe0fko_deco",	"NetwerkBeheer114"
 #endif
 
 #define		SI5351_FREQ_CORRECTION_01   (13126UL)
@@ -194,7 +196,7 @@ const   uint32_t		value_20ms_loop			= 20;   // 20ms
 static  uint32_t		timer_20ms_loop;
 const   uint32_t		value_wspr_bit_ms		= WSPR_DELAY;
 static  uint32_t		timer_wspr_bit_ms;
-const   uint32_t		value_display_auto_off	= (10 * 60UL * 1000UL);		// 10 min
+const   uint32_t		value_display_auto_off	= (1 * 60UL * 1000UL);		// 1 min
 static  uint32_t		timer_display_auto_off;
 const   uint32_t		value_ntp_faild_reboot	= (5 * 60UL * 1000UL);		// 5 min
 static  uint32_t		timer_ntp_faild_reboot;
@@ -205,14 +207,13 @@ char					PASSWORD[32]			= "12345678";	// Will use the CPU ID for the password!
 float					temperature_now			= 0.0;
 
 uint8_t					wspr_symbols[WSPR_SYMBOL_COUNT];
-
 uint8_t					wspr_symbol_index		= 0;
 uint16_t				wspr_tx_counter        	= 0;
 
 enum {        			WSPR_TX_NONE, WSPR_TX_TYPE_1, WSPR_TX_TYPE_2, WSPR_TX_TYPE_3 };
 uint8_t					wspr_slot_tx[WSPR_SLOTS_MAX];     // 0=None, 1=CALL, 2=F/CALL, 3=<F/CALL>
 uint8_t					wspr_slot_band[WSPR_SLOTS_MAX];
-//uint64_t				wspr_frequency;
+uint64_t				wspr_frequency;
 
 #define TONE_SPACING(N)	((uint16_t)(12000.0/8192.0 * N * SI5351_FREQ_MULT + 0.5))
 const int16_t      		wspr_sym_freq[4] = { TONE_SPACING(0), TONE_SPACING(1), TONE_SPACING(2), TONE_SPACING(3) };
@@ -230,12 +231,11 @@ void make_slot_plan(bool setup)
 {
     // Clean the old slot plan.
     memset(wspr_slot_tx, WSPR_TX_NONE, WSPR_SLOTS_MAX);
-	memset(wspr_slot_band, 100, WSPR_SLOTS_MAX);
-//	memset(wspr_slot_band, random(20, 180), WSPR_SLOTS_MAX);
+	memset(wspr_slot_band, random(10, 190), WSPR_SLOTS_MAX);
 
+#ifdef FEATURE_1H_FAST_TX
 	if (setup)
 	{
-#ifdef FEATURE_1H_FAST_TX
 		// Every odd slot a TX until the first hour.
 		for (int i = 0; i < WSPR_SLOTS_MAX; i += 6)
 		{
@@ -246,11 +246,11 @@ void make_slot_plan(bool setup)
 //			wspr_slot_tx[i+4] = WSPR_TX_NONE;	// 4 - Min:  8, 20, 32, 44, 56
 //			wspr_slot_tx[i+5] = WSPR_TX_NONE;	// 5 - Min: 10, 22, 34, 46, 58
 		}
-#endif
 	}
 	else
+#endif
 	{
-		int   s0,s1,s2,t;
+		int   s0,s1,s2,s3,t;
 		float tf;
 
 		sensors.requestTemperatures(); 
@@ -258,7 +258,7 @@ void make_slot_plan(bool setup)
 		PRINTF("Slot Temperature %.1fºC\n", tf);
 
 		//Convert temperature to integer value
-		// -20 .. <70 ==> 0 .. <70 = *10 = <700
+		// >-20 ... <50 ==> 0 ... 70 ==> *10 = 0 ... 700
 		tf += 20.0;								//== Negative start offset
 		if (tf < 0.0) tf = 0.0;
 		if (tf > (70.0-0.1)) tf = 70.0-0.1;
@@ -270,29 +270,23 @@ void make_slot_plan(bool setup)
 // 	-20	-10	0	10	20	30	40	50
 //	-11	-1	9	19	29	39	49	59
 
-		s0 = 2 + t / 100;       // 0-6 :  4 .. 16 min
+		s1 = 1 + t / 100;       // 0-6 :  4 .. 16 min
 		t %= 100;
-		s1 = 10 + t / 10;       // 0-9 : 20 .. 38 min
+		s2 = 10 + t / 10;       // 0-9 : 20 .. 38 min
 		t %= 10;
-		s2 = 20 + t;			// 0-9 : 40 .. 58 min
-//		PRINTF("TX Slots: %d, %d, %d\n", s0, s1, s2);
-//		PRINTF("TX minut: %d, %d, %d\n", s0*2, s1*2, s2*2);
+		s3 = 20 + t;			// 0-9 : 40 .. 58 min
+		s0 = s1 + 1;			// After first digit tx
 
+		PRINTF("TX Slots: %d, %d, %d, %d\n", s0, s1, s2, s3);
 #if 0
 		wspr_slot_tx[s0]   = WSPR_TX_TYPE_1;
 		wspr_slot_tx[s1]   = WSPR_TX_TYPE_1;
 		wspr_slot_tx[s2]   = WSPR_TX_TYPE_1;
 #else
-		wspr_slot_tx[1]		= WSPR_TX_TYPE_3;	// TX locator 6
-		wspr_slot_tx[s0]	= WSPR_TX_TYPE_2;	// Comp, no locator
+		wspr_slot_tx[s0]	= WSPR_TX_TYPE_3;	// TX locator 6
 		wspr_slot_tx[s1]	= WSPR_TX_TYPE_2;	// Comp, no locator
 		wspr_slot_tx[s2]	= WSPR_TX_TYPE_2;	// Comp, no locator
-
-		// Select a frequncy for every transmission.
-    	wspr_slot_band[1]	= random(20, 180);
-    	wspr_slot_band[s0]	= random(20, 180);
-    	wspr_slot_band[s1]	= random(20, 180);
-    	wspr_slot_band[s2]	= random(20, 180);
+		wspr_slot_tx[s3]	= WSPR_TX_TYPE_2;	// Comp, no locator
 #endif
 	}
 
@@ -317,7 +311,6 @@ void setup()
 {
 	randomSeed(0x1502);
 
-//	Serial.begin(74880);				//  74880
 	Serial.begin(115200);				// 115200
 	Serial.setTimeout(2000);
 	while(!Serial) yield();
@@ -336,8 +329,8 @@ void setup()
 
 	pinMode(LED_BUILTIN, OUTPUT);		// BuildIn LED
 
-	PRINTF("\nPE0FKO, WSPR Clock, Build: %s %s\n", __TIME__, __DATE__);
-	PRINTF("Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
+	PRINTF("\n\nPE0FKO, WSPR Clock, Build: %s %s\n", __TIME__, __DATE__);
+	PRINTF("Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
 
 /*	EEPROM.begin(8);
 	if (EEPROM.read(0) != (0x50+(EEPROM_VERSION))) 
@@ -425,15 +418,7 @@ void setup()
 #endif
 
 #ifdef FEATURE_OTA
-	PRINTF("OTA Initialize\n");
-	ssd1306_text(200, "OTA setup");
-	ArduinoOTA.onStart(ota_start);
-	ArduinoOTA.onProgress(ota_progress);
-	ArduinoOTA.onEnd(ota_stop);
-	ArduinoOTA.onError(ota_error);
-	ArduinoOTA.setHostname(HOSTNAME);
-	ArduinoOTA.setPassword("pe0fko");
-	ArduinoOTA.begin();
+	init_ota();
 #endif
 
 	init_si5351();						// Init the frequency generator SI5351
@@ -564,6 +549,15 @@ static void ota_error(ota_error_t error)
 
 static void init_ota()
 {
+	PRINTF("OTA Initialize\n");
+	ssd1306_text(200, "OTA setup");
+	ArduinoOTA.onStart(ota_start);
+	ArduinoOTA.onProgress(ota_progress);
+	ArduinoOTA.onEnd(ota_stop);
+	ArduinoOTA.onError(ota_error);
+	ArduinoOTA.setHostname(HOSTNAME);
+//	ArduinoOTA.setPassword("pe0fko");
+	ArduinoOTA.begin();
 }
 #endif
 
@@ -635,9 +629,11 @@ void loop()
 	switch(wifiMulti.run()) 
 	{
 		case WL_CONNECTED:
+//		PRINTF("WiFi connected!\n");
 		break;
 
 		case WL_CONNECT_FAILED:
+		PRINTF("WiFi connect failed.\n");
 		ssd1306_text(200, "WiFi connect", "FAILED");
 		timer_display_auto_off = millis();	// Start the display ON timer
 		display_switch_status = DISPLAY_ON;
@@ -664,10 +660,9 @@ void loop()
 	// Wait for the NTP time service is known!
 	if (!ntp_time_sync) 
 	{
-		ssd1306_text(200, "Waiting", "NTP");
-		PRINTF("Waiting time sync detecting (NTP)...\n");
+		ssd1306_text(200, "Waiting", "NTP sync");
 		time_t now = time(nullptr);			// get UNIX timestamp 
-		Serial.print("System NTP time: ");
+		Serial.print("Waiting NTP sync, time: ");
 		Serial.print(ctime(&now));
 		time(nullptr);
 
@@ -691,7 +686,7 @@ void loop()
 	if (wspr_symbol_index != 0 && (millis() - timer_wspr_bit_ms) >= value_wspr_bit_ms)
 	{
 		timer_wspr_bit_ms += value_wspr_bit_ms;
-		wspr_bit_tx(0);
+		wspr_bit_tx();
 	}
 
 	//
@@ -768,12 +763,12 @@ static 	int8_t 		last_sec	= -1;
 					wspr.wspr_encode(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 
 					// Calc the SI5351 frequency setting.
-					uint64_t base_frequency  = 
+					wspr_frequency  = 
 							SI5351_FREQ_MULT * (uint64_t)(WSPR_TX_FREQ)
 						+ 	SI5351_FREQ_MULT * wspr_slot_band[wspr_slot];
 
 					timer_wspr_bit_ms = millis();
-					wspr_bit_tx(base_frequency);
+					wspr_bit_tx();
 
 //					extern void print_wspr_symbols(const char* call, const char* loc, uint8_t power, uint8_t symbols[]);
 //					print_wspr_symbols(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
@@ -868,19 +863,16 @@ static 	int8_t 		last_sec	= -1;
 	}   		// 50Hz code lus
 }
 
-void wspr_bit_tx(uint64_t base_frequency)
+void wspr_bit_tx()
 {
-	static uint64_t base = 0;
-
 	if (wspr_symbol_index == 0)
 	{
-		base = base_frequency;
 		PRINTF("WSPR TX Start transmission\n");
 	}
 
 	if (wspr_symbol_index != WSPR_SYMBOL_COUNT) 
 	{
-		if (si5351.set_freq( base + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], SI5351_CLK0 ) )
+		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], SI5351_CLK0 ) )
 		{
 	  		PRINTF("WSPR TX SI5351::set_freq() error.\n");
 		}
