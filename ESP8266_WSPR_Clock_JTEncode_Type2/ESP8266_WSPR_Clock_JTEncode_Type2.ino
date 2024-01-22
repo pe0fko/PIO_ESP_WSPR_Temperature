@@ -125,14 +125,16 @@
 #ifndef WIFI_SSID_01
 #define		WIFI_SSID_01		"pe0fko_guest",	"Welkom-114"
 #define		WIFI_SSID_02		"pe0fko_ziggo",	"NetwerkBeheer114"
-//#define		WIFI_SSID_03		"pe0fko-4g",	"NETWERKBEHEER"
-#define		WIFI_SSID_03		"pe0fko_deco",	"NetwerkBeheer114"
+#define		WIFI_SSID_03		"pe0fko-4g",	"NETWERKBEHEER"
+#define		WIFI_SSID_04		"pe0fko_deco",	"NetwerkBeheer114"
 #endif
+
+#define		MYTZ				TZ_Europe_Amsterdam	// TZ string for currect location
 
 #define		SI5351_FREQ_CORRECTION_01   (13126UL)
 #define		SI5351_FREQ_CORRECTION_02   (116000UL)
 
-#define		HOSTNAME          	"WsprTx"
+#define		HOSTNAME          	"wsprtx"
 #define		TEMP_CORRECTION   	0.0			// Change at 18/08/2022
 #define		WSPR_DELAY        	683			// Delay value for WSPR
 #define		WSPR_SLOTS_MAX		30			// 30 times 2min slots in a hour
@@ -146,6 +148,9 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <time.h>
+#include <sys/time.h>
+#include <TZ.h>
+#include <sntp.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <DNSServer.h>
@@ -157,7 +162,6 @@
 #include <si5351.h>               // Etherkit
 #include <JTEncode.h>             // Etherkit
 #include "coredecls.h"
-#include "sntp.h"
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #ifdef FEATURE_mDNS
@@ -172,14 +176,13 @@
 #endif
 
 #ifdef DEBUG_ESP_PORT
-#define PRINTF(...)		{ DEBUG_ESP_PORT.printf(__VA_ARGS__); }
-#define PRINTVAR(...)	{ DEBUG_ESP_PORT.printf(#__VA_ARGS__"="); DEBUG_ESP_PORT.print (__VA_ARGS__); DEBUG_ESP_PORT.print("\n"); }
+// Put the strings in PROGMEM, slow but free some (constant) ram memory.
+ #define PRINT(S)			{ DEBUG_ESP_PORT.print(PSTR(S)); }
+ #define PRINTF(F,...)		{ DEBUG_ESP_PORT.printf_P(PSTR(F), __VA_ARGS__); }
 #else
-#error "WARNING: Set Tools/Debug port:Serial to see some output"
-#define PRINTF(...)		{ }
-#define PRINTVAR(...)	{ }
+ #define PRINT(...)			{ }
+ #define PRINTF(...)		{ }
 #endif
-
 
 ESP8266WiFiMulti		wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 boolean					connectioWasAlive = true;		// ESP8266WiFiMulti
@@ -188,28 +191,35 @@ Adafruit_SSD1306		display(-1);
 Si5351					si5351;
 JTEncode				wspr;
 
+WiFiEventHandler		wifiConnectHandler;			// WiFi connect event handler
+WiFiEventHandler		wifiDisconnectHandler;		// WiFi disconnect event handler
+
 OneWire					oneWire(ONE_WIRE_BUS);
 DallasTemperature		sensors(&oneWire);
 
 // Variables and constants for timeouts
+
+//static esp8266::polledTimeout::periodicMs showTimeNow(60000);  // Checkout
+
 const   uint32_t		value_20ms_loop			= 20;   // 20ms
 static  uint32_t		timer_20ms_loop;
 const   uint32_t		value_wspr_bit_ms		= WSPR_DELAY;
 static  uint32_t		timer_wspr_bit_ms;
-const   uint32_t		value_display_auto_off	= (1 * 60UL * 1000UL);		// 1 min
+const   uint32_t		value_display_auto_off	= 10 * 60000;		// Display on time
 static  uint32_t		timer_display_auto_off;
-const   uint32_t		value_ntp_faild_reboot	= (5 * 60UL * 1000UL);		// 5 min
+const   uint32_t		value_ntp_faild_reboot	= 3600 * 1000;		// 1 hour (ntp must be updated in this time)
 static  uint32_t		timer_ntp_faild_reboot;
-volatile bool			ntp_time_sync;
-static	bool			wifi_connected_msg		= false;
 
-char					PASSWORD[32]			= "12345678";	// Will use the CPU ID for the password!
+const	uint32_t		sntp_update_delay		= 30 * 60000;		// NTP update every 30min
+
+volatile bool			ntp_time_sync;
+
+//char					PASSWORD[32]			= "12345678";	// Will use the CPU ID for the password!
 float					temperature_now			= 0.0;
 
 uint8_t					wspr_symbols[WSPR_SYMBOL_COUNT];
 uint8_t					wspr_symbol_index		= 0;
 uint16_t				wspr_tx_counter        	= 0;
-
 enum {        			WSPR_TX_NONE, WSPR_TX_TYPE_1, WSPR_TX_TYPE_2, WSPR_TX_TYPE_3 };
 uint8_t					wspr_slot_tx[WSPR_SLOTS_MAX];     // 0=None, 1=CALL, 2=F/CALL, 3=<F/CALL>
 uint8_t					wspr_slot_band[WSPR_SLOTS_MAX];
@@ -219,8 +229,8 @@ uint64_t				wspr_frequency;
 const int16_t      		wspr_sym_freq[4] = { TONE_SPACING(0), TONE_SPACING(1), TONE_SPACING(2), TONE_SPACING(3) };
 
 static  uint8_t			switchStatusLast		= HIGH;  // last status hardware switch
-enum {		DISPLAY_OFF,	DISPLAY_ON,	DISPLAY_NOTHING	};
-static  uint8_t			display_switch_status	= DISPLAY_ON;
+enum {		DISPLAY_OFF,	DISPLAY_ON }; //,	DISPLAY_NOTHING	};
+static  uint8_t			display_switch_status;
 
 void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2=NULL);
 
@@ -264,20 +274,13 @@ void make_slot_plan(bool setup)
 		if (tf > (70.0-0.1)) tf = 70.0-0.1;
 		tf *= 10;								//== Decimal steps
 		t = (int)(tf + 0.5);					// Rounding
-//		PRINTF("Code message temp: %03d\n", t);
 
-// 	4	6	8	10	12	14	16	18
-// 	-20	-10	0	10	20	30	40	50
-//	-11	-1	9	19	29	39	49	59
+		s1 =  0 + t / 100;	t %= 100;	// 0-6 :  0 .. 12 min
+		s2 = 10 + t /  10;	t %= 10;	// 0-9 : 20 .. 38 min
+		s3 = 20 + t /   1;				// 0-9 : 40 .. 58 min
+		s0 = s1 + 1;					// After first digit tx
 
-		s1 = 1 + t / 100;       // 0-6 :  4 .. 16 min
-		t %= 100;
-		s2 = 10 + t / 10;       // 0-9 : 20 .. 38 min
-		t %= 10;
-		s3 = 20 + t;			// 0-9 : 40 .. 58 min
-		s0 = s1 + 1;			// After first digit tx
-
-		PRINTF("TX Slots: %d, %d, %d, %d\n", s0, s1, s2, s3);
+		PRINTF("TX Slots min: (%d), [%d, %d, %d]\n", s0 * 2, s1 * 2, s2 * 2, s3 * 2);
 #if 0
 		wspr_slot_tx[s0]   = WSPR_TX_TYPE_1;
 		wspr_slot_tx[s1]   = WSPR_TX_TYPE_1;
@@ -291,46 +294,52 @@ void make_slot_plan(bool setup)
 	}
 
 #ifdef FEATURE_PRINT_TIMESLOT
-	PRINTF("Time Slot: ");
+	PRINT("Time Slot: ");
 	for(uint8_t i=0; i < WSPR_SLOTS_MAX; ++i) {
 		if (wspr_slot_tx[i] != WSPR_TX_NONE)
 			PRINTF("%d:%ds-%03db, ", i, wspr_slot_tx[i], wspr_slot_band[i]); 
 	}
-	PRINTF("\n");
+	PRINT("\n");
 #endif
+}
+
+uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
+{
+    return sntp_update_delay;
 }
 
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....    
 //---------------------------------------------------------------------------------
-
-WiFiEventHandler wifiConnectHandler;
-WiFiEventHandler wifiDisconnectHandler;
-
 void setup() 
 {
+	WiFi.persistent(false);				// Don't save WiFi configuration in flash
+	WiFi.mode(WIFI_OFF);				// Start WiFi later
+
 	randomSeed(0x1502);
 
 	Serial.begin(115200);				// 115200
 	Serial.setTimeout(2000);
 	while(!Serial) yield();
-	delay(500);
+	delay(100);
 
 #ifdef DEBUG_ESP_PORT
 	Serial.setDebugOutput(true);
 #endif
 
-	PRINTF("DEBUG SSD1306: %d x %d\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH);
+//	PRINTF("DEBUG SSD1306: %d x %d\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH);
 	display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 //	display.setRotation(2);				// Display upside down...
 
 	pinMode(BUTTON_INPUT, INPUT);		// Button for display on/off
 	timer_display_auto_off = millis();	// Start the display ON timer
+	display_switch_status  = DISPLAY_ON;
 
 	pinMode(LED_BUILTIN, OUTPUT);		// BuildIn LED
 
-	PRINTF("\n\nPE0FKO, WSPR Clock, Build: %s %s\n", __TIME__, __DATE__);
-	PRINTF("Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
+	PRINT("\n=== PE0FKO, TX WSPR temperature coded\n");
+	PRINTF ("=== Build at: %s %s\n", __TIME__, __DATE__);
+	PRINTF ("=== Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
 
 /*	EEPROM.begin(8);
 	if (EEPROM.read(0) != (0x50+(EEPROM_VERSION))) 
@@ -350,12 +359,20 @@ void setup()
 	EEPROM.end();
 */
 
-//	WiFi.disconnect();				// Debug!! Testing delete all wifi profiles onboard
-//	WiFi.softAPdisconnect(true);	// TEST TEST TEST TEST TEST TEST TEST TEST
+	// Try to startup the WiFi Multi connection with the strongest AP found.
+	ssd1306_text(200, "WiFiMulti Init", HOSTNAME);
+	WiFi.mode(WIFI_STA);				// Set WiFi to station mode
+	WiFi.setAutoReconnect(true);		// Keep WiFi connected
 	WiFi.hostname(HOSTNAME);
 
-	// Try to startup the WiFi Multi connection with the strongest AP found.
-	ssd1306_text(200, "WiFiMulti Init");
+	// Register FiFi event handlers
+	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
+	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
+
+#ifdef FEATURE_mDNS
+	init_mdns();						// Init the broadcast DNS server (.local)
+#endif
+
 #ifdef WIFI_SSID_01
 	wifiMulti.addAP(WIFI_SSID_01);
 #endif
@@ -365,25 +382,21 @@ void setup()
 #ifdef WIFI_SSID_03
 	wifiMulti.addAP(WIFI_SSID_03);
 #endif
+#ifdef WIFI_SSID_04
+	wifiMulti.addAP(WIFI_SSID_04);
+#endif
 
 #if 0
-	PRINTF("Connecting .");
+	PRINT("Connecting .");
 	ssd1306_text(200, "WM: Connect");
 	int i = 0;
 	while (wifiMulti.run() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
 		delay(400);
-		PRINTF(".");
+		PRINT(".");
 	}
-	PRINTF("\n");
+	PRINT("\n");
 	ssd1306_text(200, "WM: Connected");
 #endif
-
-	// Don't save WiFi configuration in flash - optional
-	WiFi.persistent(false);
-	// Set WiFi to station mode
-	WiFi.mode(WIFI_STA);
-	// Keep WiFi connected
-	WiFi.setAutoReconnect(true);
 
 #if 0
 	// autoconfiguration portal for wifi settings
@@ -401,9 +414,9 @@ void setup()
 //	wifiManager.autoConnect(HOSTNAME, PASSWORD);
 	bool success = wifiManager.autoConnect(HOSTNAME, PASSWORD);
 	if (success) {
-		PRINTF("WiFiManager connected!\n");
+		PRINT("WiFiManager connected!\n");
 	} else {
-		PRINTF("WiFiManager Failed to connected.\n");
+		PRINT("WiFiManager Failed to connected.\n");
 	}
 #else
 	wifiManager.startConfigPortal(HOSTNAME, PASSWORD);
@@ -413,16 +426,12 @@ void setup()
 
 	init_sntp_now();					// Init the sNTP client to get the real time
 
-#ifdef FEATURE_mDNS
-	init_mdns();						// Init the broadcast DNS server (.local)
-#endif
-
 #ifdef FEATURE_OTA
 	init_ota();
 #endif
 
-	init_si5351();						// Init the frequency generator SI5351
 	init_oneWire();						// Init the Dallas temperature one-wire sensor
+	init_si5351();						// Init the frequency generator SI5351
 
 	make_slot_plan(true);				// The first hour slot plan definition
 
@@ -443,12 +452,8 @@ void setup()
 	PRINTF("CW Carrier on: %fMHz\n", (float)(WSPR_TX_FREQ + 100)/1e6);
 #endif
 
-	//Register event handlers
-	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
-	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
-
-	ssd1306_text(200, "Start looping");
-	Serial.println("==== Start looping ====");
+	ssd1306_text(200, "Start", "looping");
+	Serial.println("=== Start looping...");
 }
 
 #if 0
@@ -468,11 +473,28 @@ void configModeCallback (WiFiManager *myWiFiManager)
 }
 #endif
 
-void onWifiConnect(const WiFiEventStationModeGotIP& event) {
-	wifi_connected_msg = true;
+void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo) 
+{
+	Serial.printf("WiFi Cconnected: ip:%s/%s gw:%s\n", 
+		ipInfo.ip.toString().c_str(),
+		ipInfo.mask.toString().c_str(),
+		ipInfo.gw.toString().c_str()
+		);
+
+//	ssd1306_wifi_page();
 }
 
-void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
+void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo) 
+{
+//	Crash by multiple display update!
+//	ssd1306_text(200, "WiFi", "Disconnect");
+
+	Serial.printf("Disconnected from SSID: %s, Reason: %d\n", 
+  		disconnectInfo.ssid.c_str(), 
+		disconnectInfo.reason 
+		); 
+
+	WiFi.reconnect();
 }
 
 void init_oneWire()
@@ -490,7 +512,7 @@ static void init_mdns()
 	if (MDNS.begin(HOSTNAME))
 		MDNS.addService("http", "tcp", 80);
 	else
-		PRINTF("mDNS ERROR!\n");
+		PRINT("mDNS ERROR!\n");
 }
 #endif
 
@@ -503,13 +525,13 @@ static void init_mdns()
 
 void ota_start()
 {
-	PRINTF("OTA Start\n");
+	PRINT("OTA Start\n");
 	ssd1306_text(50, "OTA-START");
 }
 
 void ota_stop()
 {
-	PRINTF("OTA Stop\n");
+	PRINT("OTA Stop\n");
 	ssd1306_text(100, "OTA-STOP");
 	delay(200);
 	Serial.flush();
@@ -540,16 +562,16 @@ static void ota_error(ota_error_t error)
 {
     PRINTF("OTA Error[%u]: ", error);
 
-    if (error == OTA_AUTH_ERROR) 			PRINTF("Auth Failed")
-    else if (error == OTA_BEGIN_ERROR) 		PRINTF("Begin Failed")
-    else if (error == OTA_CONNECT_ERROR) 	PRINTF("Connect Failed")
-    else if (error == OTA_RECEIVE_ERROR) 	PRINTF("Receive Failed")
-    else if (error == OTA_END_ERROR) 		PRINTF("End Failed")
+    if (error == OTA_AUTH_ERROR) 			PRINT("Auth Failed")
+    else if (error == OTA_BEGIN_ERROR) 		PRINT("Begin Failed")
+    else if (error == OTA_CONNECT_ERROR) 	PRINT("Connect Failed")
+    else if (error == OTA_RECEIVE_ERROR) 	PRINT("Receive Failed")
+    else if (error == OTA_END_ERROR) 		PRINT("End Failed")
 }
 
 static void init_ota()
 {
-	PRINTF("OTA Initialize\n");
+	PRINT("OTA Initialize\n");
 	ssd1306_text(200, "OTA setup");
 	ArduinoOTA.onStart(ota_start);
 	ArduinoOTA.onProgress(ota_progress);
@@ -575,40 +597,33 @@ static void init_si5351()
 		si5351.set_clock_pwr(SI5351_CLK1, 0);
 		si5351.set_clock_pwr(SI5351_CLK2, 0);
 		ssd1306_text(200, "Si5351 OK");
-		PRINTF("SI5351 Initialized\n");
+		PRINT("SI5351 Initialized\n");
 	}
 	else
 	{
 		ssd1306_text(200, "Si5351 ERROR");
-		PRINTF("ERROR: SI5351 not found on I2C bus!\n");
+		PRINT("ERROR: SI5351 not found on I2C bus!\n");
 	}
 }
 
 void init_sntp_now()
 {
-	sntp_stop();
-//	sntp_init();
-
-	settimeofday_cb(time_is_set);	// Call-back function
-//	sntp_set_time_sync_notification_cb(time_is_set);
-
-	// Google NTP servers
-	configTime("CET-1CEST,M3.5.0/2,M10.5.0/3", "time.google.com");
-
-//	timer_ntp_faild_reboot = value_ntp_faild_reboot;
+//	sntp_stop();
+	settimeofday_cb(time_is_set);			// Call-back function
+	configTime(MYTZ, "time.google.com");	// Google NTP servers
+	sntp_init();
 	timer_ntp_faild_reboot = millis();
 	ntp_time_sync = false;
 }
 
 // callback routine - arrive here whenever a successful NTP update has occurred
-void time_is_set (void)
+void time_is_set (bool from_sntp)
 {
-#if 0
 	time_t now = time(nullptr);          // get UNIX timestamp 
 	Serial.print("NTP update done at: ");
 	Serial.print(ctime(&now));
-#endif
 	ntp_time_sync = true;
+//	timer_ntp_faild_reboot = millis();
 }
 
 
@@ -625,18 +640,66 @@ void loop()
 	MDNS.update();
 #endif
 
+#if 1
+	switch(display_switch_status) 
+	{
+	case DISPLAY_ON:
+		if (((millis() - timer_display_auto_off) >= value_display_auto_off))
+		{
+			PRINTF("Display auto Off at %d sec.\n", value_display_auto_off/1000);
+			display.clearDisplay();
+			display.invertDisplay(false);
+			display.display();
+//				display_switch_status = DISPLAY_NOTHING;
+			display_switch_status = DISPLAY_OFF;
+		}
+		break;
+
+	case DISPLAY_OFF:
+		break;
+
+	};
+
+#else
+
+	if 	((display_switch_status == DISPLAY_ON)
+	&&	((millis() - timer_display_auto_off) >= value_display_auto_off))
+	{
+		display_switch_status = DISPLAY_OFF;
+	}
+
+	if (display_switch_status == DISPLAY_OFF)
+	{
+		PRINTF("Display auto Off at %d sec.\n", value_display_auto_off/1000);
+		display.clearDisplay();
+		display.invertDisplay(false);
+		display.display();
+		display_switch_status = DISPLAY_NOTHING;
+	}
+
+#if 0
+	// Blink the ESP LED every 4s if display is off
+	if (display_switch_status == DISPLAY_NOTHING)
+	{
+		static uint8_t led_pwm;
+		led_pwm %= 200;
+		digitalWrite(LED_BUILTIN, led_pwm++ == 0 ? LOW : HIGH);
+		delay(3);
+		digitalWrite(LED_BUILTIN, HIGH);
+	}
+#endif
+
+#endif
+
 	// If still no WiFi then try again later...
 	switch(wifiMulti.run()) 
 	{
 		case WL_CONNECTED:
-//		PRINTF("WiFi connected!\n");
 		break;
 
 		case WL_CONNECT_FAILED:
-		PRINTF("WiFi connect failed.\n");
+		PRINT("WiFi connect failed.\n");
 		ssd1306_text(200, "WiFi connect", "FAILED");
-		timer_display_auto_off = millis();	// Start the display ON timer
-		display_switch_status = DISPLAY_ON;
 		return;		// Return the loop!!
 
 		case WL_WRONG_PASSWORD:
@@ -651,29 +714,20 @@ void loop()
 		return;		// Return the loop!!
 	}
 
-	// Tell us what network we're connected to
-	if (wifi_connected_msg) {
-		wifi_connected_msg = false;
-		ssd1306_wifi_page();
-	}
-
 	// Wait for the NTP time service is known!
 	if (!ntp_time_sync) 
 	{
-		ssd1306_text(200, "Waiting", "NTP sync");
-		time_t now = time(nullptr);			// get UNIX timestamp 
-		Serial.print("Waiting NTP sync, time: ");
-		Serial.print(ctime(&now));
-		time(nullptr);
-
 		if ((millis() - timer_ntp_faild_reboot) >= value_ntp_faild_reboot)
 		{
-			Serial.println("System Restart: No NTP time received.");
+			ssd1306_text(2000, "REBOOT", "NTP sync...");
+			Serial.println("REBOOT: No NTP time received.");
 			Serial.flush();
 			ESP.restart();
 		}
 
-		sntp_init();
+		ssd1306_text(200, "Waiting", "NTP sync");
+//		sntp_init();
+
 		return;		// Return the loop!!
 	}
 
@@ -691,26 +745,26 @@ void loop()
 
 	//
 	//++ 50Hz code lus
-	// Used for slower processing
-	//
-	if ((millis() - timer_20ms_loop) >= value_20ms_loop)    // Every 20ms...
+	// Used for slower processing, timing from the cpu xtal
+	if ((millis() - timer_20ms_loop) >= value_20ms_loop)    		// Every 20ms...
 	{
 		timer_20ms_loop += value_20ms_loop;
 
 		time_t		now			= time(nullptr);
 		uint16_t	sec			= now % 60;
-		uint16_t	sec2min		= now % 120;
-		uint8_t		wspr_slot	= (now / 120) % WSPR_SLOTS_MAX;		// Slot in the hour, 0..29
 static 	int8_t 		last_sec	= -1;
 
 		// Check if button is pressed to lightup the display
-		int switchStatus = digitalRead(BUTTON_INPUT);			// read status of switch
-		if (switchStatus != switchStatusLast)  // if status of button has changed
+		int switchStatus = digitalRead(BUTTON_INPUT);				// read status of switch
+		if (switchStatus != switchStatusLast)						// if status of button has changed
 		{
 			  switchStatusLast = switchStatus;
-			  if (switchStatus == LOW) {
+			  if (switchStatus == LOW) 
+			  {
 				display_switch_status = display_switch_status == DISPLAY_ON ? DISPLAY_OFF : DISPLAY_ON;
-				if (display_switch_status == DISPLAY_ON) {
+
+				if (display_switch_status == DISPLAY_ON) 
+				{
 					timer_display_auto_off = millis();  	// Start the display ON timer
 					digitalWrite(LED_BUILTIN, HIGH);		// Switch the ESP LED off
 				}
@@ -719,15 +773,15 @@ static 	int8_t 		last_sec	= -1;
 			  }
 		}
 
-		// Blink the ESP LED every 4s if display is off
-		if (display_switch_status == DISPLAY_NOTHING)
-		{
-			static uint8_t led_pwm;
-			led_pwm %= 200;
-			digitalWrite(LED_BUILTIN, led_pwm++ == 0 ? LOW : HIGH);
-			delay(3);
-			digitalWrite(LED_BUILTIN, HIGH);
-		}
+//		// Blink the ESP LED every 4s if display is off
+//		if (display_switch_status == DISPLAY_NOTHING)
+//		{
+//			static uint8_t led_pwm;
+//			led_pwm %= 200;
+//			digitalWrite(LED_BUILTIN, led_pwm++ == 0 ? LOW : HIGH);
+//			delay(3);
+//			digitalWrite(LED_BUILTIN, HIGH);
+//		}
 		
 		//
 		//++ Updates for every second
@@ -739,9 +793,10 @@ static 	int8_t 		last_sec	= -1;
 			//
 			//++ At every 2 minute interval start a WSPR message, if slot is richt.
 			//
-			if (sec2min == 0)	// First second of the 2 minute interval clock
+			if (now % 120 == 0)										// First second of the 2 minute interval clock
 			{
 				char const* call = NULL;
+				uint8_t	wspr_slot = (now / 120) % WSPR_SLOTS_MAX;		// Slot in the hour, 0..29
 
 				if (wspr_slot == 0)
 					make_slot_plan(false);
@@ -761,6 +816,7 @@ static 	int8_t 		last_sec	= -1;
 							wspr_slot, wspr_slot_band[wspr_slot], call);
 
 					wspr.wspr_encode(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
+//					print_wspr_symbols(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 
 					// Calc the SI5351 frequency setting.
 					wspr_frequency  = 
@@ -769,16 +825,13 @@ static 	int8_t 		last_sec	= -1;
 
 					timer_wspr_bit_ms = millis();
 					wspr_bit_tx();
-
-//					extern void print_wspr_symbols(const char* call, const char* loc, uint8_t power, uint8_t symbols[]);
-//					print_wspr_symbols(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 				}
 			}
 
 			//
 			//++ At avery 2 minute interval, second 60, print the temperature
 			//
-			if (sec2min == 60)
+/*			if (now % 120 == 60)
 			{
 				sensors.requestTemperatures(); 
 				temperature_now = sensors.getTempCByIndex(0) + TEMP_CORRECTION;  
@@ -787,78 +840,10 @@ static 	int8_t 		last_sec	= -1;
 				Serial.print("Time now: ");
 				Serial.print(ctime(&now));
 			}
-
-			if (display_switch_status == DISPLAY_OFF)
-			{
-				display.clearDisplay();
-				display.invertDisplay(false);
-				display.display();
-				display_switch_status = DISPLAY_NOTHING;
-			}
-			
+*/			
 			if (display_switch_status == DISPLAY_ON)
-			{
-				if ((millis() - timer_display_auto_off) >= value_display_auto_off)
-				{
-					display_switch_status = DISPLAY_OFF;
-					PRINTF("Display auto Off at %d sec.\n", value_display_auto_off/1000);
-				}
-				else
-				{
-					ssd1306_background();
+				ssd1306_main_window(now);
 
-					uint16_t w;
-					char buffer[30];
-					struct tm *timeinfo;
-					timeinfo = localtime (&now);
-					strftime (buffer ,sizeof buffer ,"%H:%M:%S", timeinfo);
-					display.setTextSize(2);
-					w = getFontStringWidth(buffer);
-					display.setCursor((display.width() - w) / 2 , 12);
-					display.print(buffer);
-
-					strftime (buffer ,sizeof buffer ,"- %d/%m/%Y -", timeinfo);
-					display.setTextSize(1);
-					w = getFontStringWidth(buffer);
-					display.setCursor((display.width() - w) / 2 , 32);
-					display.print(buffer);
-
-					sprintf(buffer, "%s/%s/%ddBm", HAM_CALL, HAM_LOCATOR, HAM_POWER);
-					w = getFontStringWidth(buffer);
-					display.setCursor((display.width()- w)/2, display.height()-10);
-					display.print(buffer);
-	  
-					if (wspr_symbol_index != 0) 
-					{
-						uint16_t B,E;
-						B = 4;
-						E = B + sec2min;
-						display.drawLine(B, display.height()-14, E, display.height()-14, WHITE);
-						display.drawLine(B, display.height()-16, E, display.height()-16, WHITE);
-					}
-					else
-					{
-						int s = wspr_slot, w = -sec2min;
-						while (wspr_slot_tx[s++] == WSPR_TX_NONE) {
-							if (s >= WSPR_SLOTS_MAX) s = 0;
-							w += 120;
-						}
-						if (w >= 0) {
-							sprintf(buffer, "TX %02d:%02d", w/60, w%60);
-							display.setCursor(14, display.height()-20);
-							display.print(buffer);
-						}				
-
-						sprintf(buffer, "%.1f", temperature_now);
-						w = getFontStringWidth(buffer);
-						display.setCursor(display.width() - 14 - w, display.height()-20);
-						display.print(buffer);
-					}
-	  
-					display.invertDisplay(wspr_symbol_index != 0);
-					display.display();
-				}
-			}	// DISPLAY_ON
 		}   	// One second lus
 	}   		// 50Hz code lus
 }
@@ -867,14 +852,14 @@ void wspr_bit_tx()
 {
 	if (wspr_symbol_index == 0)
 	{
-		PRINTF("WSPR TX Start transmission\n");
+		PRINT("WSPR TX Start transmission\n");
 	}
 
 	if (wspr_symbol_index != WSPR_SYMBOL_COUNT) 
 	{
 		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], SI5351_CLK0 ) )
 		{
-	  		PRINTF("WSPR TX SI5351::set_freq() error.\n");
+	  		PRINT("WSPR TX SI5351::set_freq() error.\n");
 		}
 
 		if (wspr_symbol_index == 0)   // On first bit enable the tx output.
@@ -904,7 +889,71 @@ void print_wspr_symbols(const char* call, const char* loc, uint8_t power, uint8_
 	{
 		PRINTF("%d,", symbols[i]);
 	}
-	PRINTF("\n");
+	PRINT("\n");
+}
+
+void ssd1306_main_window(time_t now)
+{
+	uint16_t	w;
+	char		buffer[30];
+	struct tm*	timeinfo;
+
+	ssd1306_background();
+
+	timeinfo = localtime (&now);
+	strftime (buffer ,sizeof buffer ,"%H:%M:%S", timeinfo);
+	display.setTextSize(2);
+	w = getFontStringWidth(buffer);
+	display.setCursor((display.width() - w) / 2 , 12);
+	display.print(buffer);
+
+	strftime (buffer ,sizeof buffer ,"- %d/%m/%Y -", timeinfo);
+	display.setTextSize(1);
+	w = getFontStringWidth(buffer);
+	display.setCursor((display.width() - w) / 2 , 32);
+	display.print(buffer);
+
+	sprintf(buffer, "%s/%s/%ddBm", HAM_CALL, HAM_LOCATOR, HAM_POWER);
+	w = getFontStringWidth(buffer);
+	display.setCursor((display.width()- w)/2, display.height()-10);
+	display.print(buffer);
+	
+	if (wspr_symbol_index != 0) 
+	{
+		uint16_t B,E;
+		B = 4;
+		E = B + now % 120;
+		display.drawLine(B, display.height()-14, E, display.height()-14, WHITE);
+		display.drawLine(B, display.height()-16, E, display.height()-16, WHITE);
+
+		// At TX invert the display collors
+		display.invertDisplay(true);
+	}
+	else
+	{
+		uint8_t wspr_slot = (now / 120) % WSPR_SLOTS_MAX;		// Slot in the hour, 0..29
+		int s = wspr_slot, w = -(now % 120);
+
+		while (wspr_slot_tx[s++] == WSPR_TX_NONE) {
+			if (s >= WSPR_SLOTS_MAX) s = 0;
+			w += 120;
+		}
+		if (w >= 0) {
+			sprintf(buffer, "TX %02d:%02d", w/60, w%60);
+			display.setCursor(14, display.height()-20);
+			display.print(buffer);
+		}				
+
+		sprintf(buffer, "%.1f", temperature_now);
+		w = getFontStringWidth(buffer);
+		display.setCursor(display.width() - 14 - w, display.height()-20);
+		display.print(buffer);
+
+		// Non TX normal display
+		display.invertDisplay(false);
+	}
+
+	display.display();
 }
 
 void ssd1306_background()
@@ -953,19 +1002,31 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2)
 		display.print(txt2);
 	}
 
-//	display.setCursor(8, 52);
-//	display.print(WiFi.SSID());              // Tell us what network we're connected to
+//	PRINTF("ssd1306_text: %s / %s\n", txt1, txt2);
+	PRINTF("ssd1306_text[%d]: ", delay_ms);
+	if (txt1 != NULL)	Serial.print(txt1);
+	if (txt2 != NULL) {	Serial.print(" / "); Serial.print(txt2); }
+	Serial.println();
+
+	display.setCursor(8, 52);
+	display.print(WiFi.SSID());              // Tell us what network we're connected to
 
 	display.display();
+
+	timer_display_auto_off = millis();					// Start the display ON timer
+	display_switch_status = DISPLAY_ON;
+
 	if (delay_ms >= 0)
 		delay(delay_ms);
 }
 
 void ssd1306_wifi_page()
 {
-	PRINTF("Connected to %s (IP:%s, RSSI %d)\n"
+	PRINTF("Connected to %s (IP:%s/%s, GW:%s, RSSI %d)\n"
 		, WiFi.SSID().c_str()              
-		, WiFi.localIP().toString().c_str()           // Send the IP address of the ESP8266 to the computer
+		, WiFi.localIP().toString().c_str()				// Send the IP address of the ESP8266 to the computer
+		, WiFi.subnetMask().toString().c_str()
+		, WiFi.gatewayIP().toString().c_str()
 		, WiFi.RSSI());
   
 	ssd1306_background();
@@ -979,5 +1040,9 @@ void ssd1306_wifi_page()
  	display.printf("RSSI:%d", WiFi.RSSI());
 
 	display.display();
-	delay(5000);
+
+	timer_display_auto_off = millis();					// Start the display ON timer
+	display_switch_status = DISPLAY_ON;
+
+//	delay(5000);
 }
