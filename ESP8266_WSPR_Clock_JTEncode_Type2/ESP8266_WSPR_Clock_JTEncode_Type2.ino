@@ -30,6 +30,7 @@
 //	Using library ArduinoOTA at version 1.0 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/ArduinoOTA 
 /*/
 
+#define		VERSION		"V2.0"
 
 #define	LOC_PE0FKO
 //#define	LOC_PA_PE0FKO
@@ -43,9 +44,6 @@
 //#define		FEATURE_CARRIER
 //#define		FEATURE_1H_FAST_TX
 //#define		FEATURE_PRINT_TIMESLOT
-
-#define	  EEPROM_VERSION  1
-#define	  EEPROM_INDEX	  0
 
 // WSPR Type 1:
 // The standard message is <callsign> + <4 character locator> + <dBm transmit power>; 
@@ -313,21 +311,25 @@ uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 //---------------------------------------------------------------------------------
 void setup() 
 {
-	WiFi.persistent(false);				// Don't save WiFi configuration in flash
+//	WiFi.persistent(false);				// Don't save WiFi configuration in flash
 	WiFi.mode(WIFI_OFF);				// Start WiFi later
+	yield();
 
 	randomSeed(0x1502);
 
 	Serial.begin(115200);				// 115200
 	Serial.setTimeout(2000);
 	while(!Serial) yield();
-	delay(100);
-
 #ifdef DEBUG_ESP_PORT
 	Serial.setDebugOutput(true);
 #endif
+	delay(100);
 
-//	PRINTF("DEBUG SSD1306: %d x %d\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH);
+	PRINT("\n=== PE0FKO, TX WSPR temperature coded\n");
+	PRINTF ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
+	PRINTF ("=== Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
+
+	PRINTF("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
 	display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 //	display.setRotation(2);				// Display upside down...
 
@@ -336,28 +338,6 @@ void setup()
 	display_switch_status  = DISPLAY_ON;
 
 	pinMode(LED_BUILTIN, OUTPUT);		// BuildIn LED
-
-	PRINT("\n=== PE0FKO, TX WSPR temperature coded\n");
-	PRINTF ("=== Build at: %s %s\n", __TIME__, __DATE__);
-	PRINTF ("=== Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
-
-/*	EEPROM.begin(8);
-	if (EEPROM.read(0) != (0x50+(EEPROM_VERSION))) 
-	{
-		EEPROM.write(0, 0x50+(EEPROM_VERSION));
-		EEPROM.write(1, EEPROM_INDEX);
-		EEPROM.commit();
-	}
-	uint8_t i;
-	if ((i = EEPROM.read(1)) > (sizeof(BTCExchange) / sizeof(BTCExchange[0]))) 
-	{
-		PRINTF("EEPROM Exchange out of range: %d\n", i);
-		i = 0;
-		EEPROM.write(1, i);
-		EEPROM.commit();
-	}
-	EEPROM.end();
-*/
 
 	// Try to startup the WiFi Multi connection with the strongest AP found.
 	ssd1306_text(200, "WiFiMulti Init", HOSTNAME);
@@ -489,7 +469,7 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 //	Crash by multiple display update!
 //	ssd1306_text(200, "WiFi", "Disconnect");
 
-	Serial.printf("Disconnected from SSID: %s, Reason: %d\n", 
+	Serial.printf("WiFi disconnected from SSID: %s, Reason: %d\n", 
   		disconnectInfo.ssid.c_str(), 
 		disconnectInfo.reason 
 		); 
@@ -706,9 +686,15 @@ void loop()
 		ssd1306_text(200, "WiFi connect", "Error PASSWD");
 		return;		// Return the loop!!
 
+		case WL_DISCONNECTED:
+		ssd1306_text(200, "WiFi connect", "Disconnected");
+		return;		// Return the loop!!
+
+		case WL_NO_SSID_AVAIL:
+		ssd1306_text(200, "WiFi connect", "No SSID avail");
+		return;		// Return the loop!!
+
 //		case WL_IDLE_STATUS:
-//		case WL_NO_SSID_AVAIL:
-//		case WL_DISCONNECTED:
 		default:
 		ssd1306_text(200, "WiFi connect", "ERROR");
 		return;		// Return the loop!!
