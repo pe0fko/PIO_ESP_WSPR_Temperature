@@ -203,7 +203,7 @@ const   uint32_t		value_20ms_loop			= 20;   // 20ms
 static  uint32_t		timer_20ms_loop;
 const   uint32_t		value_wspr_bit_ms		= WSPR_DELAY;
 static  uint32_t		timer_wspr_bit_ms;
-const   uint32_t		value_display_auto_off	= 10 * 60000;		// Display on time
+const   uint32_t		value_display_auto_off	= 4 * 60000;		// Display on time
 static  uint32_t		timer_display_auto_off;
 const   uint32_t		value_ntp_faild_reboot	= 3600 * 1000;		// 1 hour (ntp must be updated in this time)
 static  uint32_t		timer_ntp_faild_reboot;
@@ -311,8 +311,14 @@ uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 //---------------------------------------------------------------------------------
 void setup() 
 {
-//	WiFi.persistent(false);				// Don't save WiFi configuration in flash
 	WiFi.mode(WIFI_OFF);				// Start WiFi later
+	WiFi.persistent(false);				// Don't save WiFi configuration in flash
+
+// true: WiFi mode configuration will be retained through power cycle. (Default)
+// false: WiFi mode configuration will not be retained through power cycle.
+//	WiFi.setmode(WIFI_OFF, false);				// Start WiFi later
+//	WiFii.mode(WIFI_OFF, false);				// Start WiFi later
+
 	yield();
 
 	randomSeed(0x1502);
