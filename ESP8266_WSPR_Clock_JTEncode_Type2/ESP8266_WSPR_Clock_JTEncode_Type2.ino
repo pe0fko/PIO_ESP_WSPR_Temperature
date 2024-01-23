@@ -175,11 +175,13 @@
 
 #ifdef DEBUG_ESP_PORT
 // Put the strings in PROGMEM, slow but free some (constant) ram memory.
- #define PRINT(S)			{ DEBUG_ESP_PORT.print(PSTR(S)); }
- #define PRINTF(F,...)		{ DEBUG_ESP_PORT.printf_P(PSTR(F), __VA_ARGS__); }
+ #define PRINT(S)			{ DEBUG_ESP_PORT.print(S); }
+ #define PRINT_P(S)			{ DEBUG_ESP_PORT.print(PSTR(S)); }
+ #define PRINTF_P(F,...)	{ DEBUG_ESP_PORT.printf_P(PSTR(F), __VA_ARGS__); }
 #else
- #define PRINT(...)			{ }
- #define PRINTF(...)		{ }
+ #define PRINT(S)			{ }
+ #define PRINT_P(...)		{ }
+ #define PRINTF_P(...)		{ }
 #endif
 
 ESP8266WiFiMulti		wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
@@ -263,7 +265,7 @@ void make_slot_plan(bool setup)
 
 		sensors.requestTemperatures(); 
 		tf = sensors.getTempCByIndex(0) + TEMP_CORRECTION;
-		PRINTF("Slot Temperature %.1fºC\n", tf);
+		PRINTF_P("Slot Temperature %.1fºC\n", tf);
 
 		//Convert temperature to integer value
 		// >-20 ... <50 ==> 0 ... 70 ==> *10 = 0 ... 700
@@ -278,7 +280,7 @@ void make_slot_plan(bool setup)
 		s3 = 20 + t /   1;				// 0-9 : 40 .. 58 min
 		s0 = s1 + 1;					// After first digit tx
 
-		PRINTF("TX Slots min: (%d), [%d, %d, %d]\n", s0 * 2, s1 * 2, s2 * 2, s3 * 2);
+		PRINTF_P("TX Slots min: (%d), [%d, %d, %d]\n", s0 * 2, s1 * 2, s2 * 2, s3 * 2);
 #if 0
 		wspr_slot_tx[s0]   = WSPR_TX_TYPE_1;
 		wspr_slot_tx[s1]   = WSPR_TX_TYPE_1;
@@ -292,12 +294,12 @@ void make_slot_plan(bool setup)
 	}
 
 #ifdef FEATURE_PRINT_TIMESLOT
-	PRINT("Time Slot: ");
+	PRINT_P("Time Slot: ");
 	for(uint8_t i=0; i < WSPR_SLOTS_MAX; ++i) {
 		if (wspr_slot_tx[i] != WSPR_TX_NONE)
-			PRINTF("%d:%ds-%03db, ", i, wspr_slot_tx[i], wspr_slot_band[i]); 
+			PRINTF_P("%d:%ds-%03db, ", i, wspr_slot_tx[i], wspr_slot_band[i]); 
 	}
-	PRINT("\n");
+	PRINT_P("\n");
 #endif
 }
 
@@ -331,11 +333,11 @@ void setup()
 #endif
 	delay(100);
 
-	PRINT("\n=== PE0FKO, TX WSPR temperature coded\n");
-	PRINTF ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
-	PRINTF ("=== Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
+	PRINT_P("\n=== PE0FKO, TX WSPR temperature coded\n");
+	PRINTF_P ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
+	PRINTF_P ("=== Config: frequency %fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", WSPR_TX_FREQ/1000000.0, HAM_POWER);
 
-	PRINTF("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
+	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
 	display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 //	display.setRotation(2);				// Display upside down...
 
@@ -373,14 +375,14 @@ void setup()
 #endif
 
 #if 0
-	PRINT("Connecting .");
+	PRINT_P("Connecting .");
 	ssd1306_text(200, "WM: Connect");
 	int i = 0;
 	while (wifiMulti.run() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
 		delay(400);
-		PRINT(".");
+		PRINT_P(".");
 	}
-	PRINT("\n");
+	PRINT_P("\n");
 	ssd1306_text(200, "WM: Connected");
 #endif
 
@@ -400,9 +402,9 @@ void setup()
 //	wifiManager.autoConnect(HOSTNAME, PASSWORD);
 	bool success = wifiManager.autoConnect(HOSTNAME, PASSWORD);
 	if (success) {
-		PRINT("WiFiManager connected!\n");
+		PRINT_P("WiFiManager connected!\n");
 	} else {
-		PRINT("WiFiManager Failed to connected.\n");
+		PRINT_P("WiFiManager Failed to connected.\n");
 	}
 #else
 	wifiManager.startConfigPortal(HOSTNAME, PASSWORD);
@@ -422,7 +424,7 @@ void setup()
 	make_slot_plan(true);				// The first hour slot plan definition
 
 	time_t now = time(nullptr);			// get UNIX timestamp 
-	Serial.print(ctime(&now));			// convert timestamp and display
+	PRINT(ctime(&now));					// convert timestamp and display
 
 	pinMode(LED_BUILTIN, OUTPUT);		// LED on the ESP
 	digitalWrite(LED_BUILTIN, HIGH);	// High is off!
@@ -435,11 +437,11 @@ void setup()
 
 	si5351.set_clock_pwr(SI5351_CLK0, 1);
 	si5351.output_enable(SI5351_CLK0, 1);
-	PRINTF("CW Carrier on: %fMHz\n", (float)(WSPR_TX_FREQ + 100)/1e6);
+	PRINTF_P("CW Carrier on: %fMHz\n", (float)(WSPR_TX_FREQ + 100)/1e6);
 #endif
 
 	ssd1306_text(200, "Start", "looping");
-	Serial.println("=== Start looping...");
+	PRINT_P("=== Start looping...\n");
 }
 
 #if 0
@@ -452,7 +454,7 @@ void configModeCallback (WiFiManager *myWiFiManager)
 	display.print(WiFi.softAPIP());
 	display.display();
 /*
-	PRINTF("WiFi portal config mode\nSSID: %s\nIP  : %s\n", 
+	PRINTF_P("WiFi portal config mode\nSSID: %s\nIP  : %s\n", 
 			myWiFiManager->getConfigPortalSSID().c_str(),
 			WiFi.softAPIP());
 */
@@ -461,7 +463,7 @@ void configModeCallback (WiFiManager *myWiFiManager)
 
 void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo) 
 {
-	Serial.printf("WiFi Cconnected: ip:%s/%s gw:%s\n", 
+	PRINTF_P("WiFi Cconnected: ip:%s/%s gw:%s\n", 
 		ipInfo.ip.toString().c_str(),
 		ipInfo.mask.toString().c_str(),
 		ipInfo.gw.toString().c_str()
@@ -475,7 +477,7 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 //	Crash by multiple display update!
 //	ssd1306_text(200, "WiFi", "Disconnect");
 
-	Serial.printf("WiFi disconnected from SSID: %s, Reason: %d\n", 
+	PRINTF_P("WiFi disconnected from SSID: %s, Reason: %d\n", 
   		disconnectInfo.ssid.c_str(), 
 		disconnectInfo.reason 
 		); 
@@ -488,7 +490,7 @@ void init_oneWire()
 	sensors.begin();
 	sensors.requestTemperatures();
 	temperature_now = sensors.getTempCByIndex(0) + TEMP_CORRECTION;  
-	PRINTF("Sensor init temperature %.1fºC\n", temperature_now);
+	PRINTF_P("Sensor init temperature %.1fºC\n", temperature_now);
 }
 
 #ifdef FEATURE_mDNS
@@ -498,7 +500,7 @@ static void init_mdns()
 	if (MDNS.begin(HOSTNAME))
 		MDNS.addService("http", "tcp", 80);
 	else
-		PRINT("mDNS ERROR!\n");
+		PRINT_P("mDNS ERROR!\n");
 }
 #endif
 
@@ -511,13 +513,13 @@ static void init_mdns()
 
 void ota_start()
 {
-	PRINT("OTA Start\n");
+	PRINT_P("OTA Start\n");
 	ssd1306_text(50, "OTA-START");
 }
 
 void ota_stop()
 {
-	PRINT("OTA Stop\n");
+	PRINT_P("OTA Stop\n");
 	ssd1306_text(100, "OTA-STOP");
 	delay(200);
 	Serial.flush();
@@ -528,12 +530,12 @@ static int report_perc = 0;
 
 void ota_progress(unsigned int progress, unsigned int total)
 {
-//	PRINTF("OTA Progress %d/%d\n", progress, total);
+//	PRINTF_P("OTA Progress %d/%d\n", progress, total);
 
 	int perc = (uint32_t)progress * 100UL / total;
 	if (perc >= report_perc) 
 	{
-		PRINTF("OTA Progress %d%%\n", perc);
+		PRINTF_P("OTA Progress %d%%\n", perc);
 		report_perc += 5;
 
 		ssd1306_background();
@@ -546,18 +548,18 @@ void ota_progress(unsigned int progress, unsigned int total)
 
 static void ota_error(ota_error_t error) 
 {
-    PRINTF("OTA Error[%u]: ", error);
+    PRINTF_P("OTA Error[%u]: ", error);
 
-    if (error == OTA_AUTH_ERROR) 			PRINT("Auth Failed")
-    else if (error == OTA_BEGIN_ERROR) 		PRINT("Begin Failed")
-    else if (error == OTA_CONNECT_ERROR) 	PRINT("Connect Failed")
-    else if (error == OTA_RECEIVE_ERROR) 	PRINT("Receive Failed")
-    else if (error == OTA_END_ERROR) 		PRINT("End Failed")
+    if (error == OTA_AUTH_ERROR) 			PRINT_P("Auth Failed")
+    else if (error == OTA_BEGIN_ERROR) 		PRINT_P("Begin Failed")
+    else if (error == OTA_CONNECT_ERROR) 	PRINT_P("Connect Failed")
+    else if (error == OTA_RECEIVE_ERROR) 	PRINT_P("Receive Failed")
+    else if (error == OTA_END_ERROR) 		PRINT_P("End Failed")
 }
 
 static void init_ota()
 {
-	PRINT("OTA Initialize\n");
+	PRINT_P("OTA Initialize\n");
 	ssd1306_text(200, "OTA setup");
 	ArduinoOTA.onStart(ota_start);
 	ArduinoOTA.onProgress(ota_progress);
@@ -583,12 +585,12 @@ static void init_si5351()
 		si5351.set_clock_pwr(SI5351_CLK1, 0);
 		si5351.set_clock_pwr(SI5351_CLK2, 0);
 		ssd1306_text(200, "Si5351 OK");
-		PRINT("SI5351 Initialized\n");
+		PRINT_P("SI5351 Initialized\n");
 	}
 	else
 	{
 		ssd1306_text(200, "Si5351 ERROR");
-		PRINT("ERROR: SI5351 not found on I2C bus!\n");
+		PRINT_P("ERROR: SI5351 not found on I2C bus!\n");
 	}
 }
 
@@ -606,8 +608,8 @@ void init_sntp_now()
 void time_is_set (bool from_sntp)
 {
 	time_t now = time(nullptr);          // get UNIX timestamp 
-	Serial.print("NTP update done at: ");
-	Serial.print(ctime(&now));
+	PRINT_P("NTP update done at: ");
+	PRINT(ctime(&now));
 	ntp_time_sync = true;
 //	timer_ntp_faild_reboot = millis();
 }
@@ -632,7 +634,7 @@ void loop()
 	case DISPLAY_ON:
 		if (((millis() - timer_display_auto_off) >= value_display_auto_off))
 		{
-			PRINTF("Display auto Off at %d sec.\n", value_display_auto_off/1000);
+			PRINTF_P("Display auto Off at %d sec.\n", value_display_auto_off/1000);
 			display.clearDisplay();
 			display.invertDisplay(false);
 			display.display();
@@ -656,7 +658,7 @@ void loop()
 
 	if (display_switch_status == DISPLAY_OFF)
 	{
-		PRINTF("Display auto Off at %d sec.\n", value_display_auto_off/1000);
+		PRINTF_P("Display auto Off at %d sec.\n", value_display_auto_off/1000);
 		display.clearDisplay();
 		display.invertDisplay(false);
 		display.display();
@@ -684,7 +686,7 @@ void loop()
 		break;
 
 		case WL_CONNECT_FAILED:
-		PRINT("WiFi connect failed.\n");
+		PRINT_P("WiFi connect failed.\n");
 		ssd1306_text(200, "WiFi connect", "FAILED");
 		return;		// Return the loop!!
 
@@ -712,7 +714,7 @@ void loop()
 		if ((millis() - timer_ntp_faild_reboot) >= value_ntp_faild_reboot)
 		{
 			ssd1306_text(2000, "REBOOT", "NTP sync...");
-			Serial.println("REBOOT: No NTP time received.");
+			PRINT_P("REBOOT: No NTP time received.\n");
 			Serial.flush();
 			ESP.restart();
 		}
@@ -761,7 +763,7 @@ static 	int8_t 		last_sec	= -1;
 					digitalWrite(LED_BUILTIN, HIGH);		// Switch the ESP LED off
 				}
 				last_sec = -1;								// Fast update of the display
-				PRINTF("Button pressed, display_switch_status=%d\n", display_switch_status);
+				PRINTF_P("Button pressed, display_switch_status=%d\n", display_switch_status);
 			  }
 		}
 
@@ -804,7 +806,7 @@ static 	int8_t 		last_sec	= -1;
 
 				if (call != NULL) 
 				{
-					PRINTF("WSPR TX slot %d, band %d, TX call: %s\n", 
+					PRINTF_P("WSPR TX slot %d, band %d, TX call: %s\n", 
 							wspr_slot, wspr_slot_band[wspr_slot], call);
 
 					wspr.wspr_encode(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
@@ -844,14 +846,14 @@ void wspr_bit_tx()
 {
 	if (wspr_symbol_index == 0)
 	{
-		PRINT("WSPR TX Start transmission\n");
+		PRINT_P("WSPR TX Start transmission\n");
 	}
 
 	if (wspr_symbol_index != WSPR_SYMBOL_COUNT) 
 	{
 		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], SI5351_CLK0 ) )
 		{
-	  		PRINT("WSPR TX SI5351::set_freq() error.\n");
+	  		PRINT_P("WSPR TX SI5351::set_freq() error.\n");
 		}
 
 		if (wspr_symbol_index == 0)   // On first bit enable the tx output.
@@ -868,7 +870,7 @@ void wspr_bit_tx()
 		si5351.set_clock_pwr(SI5351_CLK0, 0);
 		wspr_symbol_index = 0;
 		wspr_tx_counter += 1;
-		PRINTF("WSPR TX %d Ended.\n", wspr_tx_counter);
+		PRINTF_P("WSPR TX %d Ended.\n", wspr_tx_counter);
 	}
 }
 
@@ -876,12 +878,12 @@ void wspr_bit_tx()
 // SYMBOL: 3,3,2,0,2,2,0,2,3,0,2,2,3,3,3,0,0,0,1,2,0,1,2,3,1,1,3,2,0,2,2,2,2,0,1,2,0,1,2,3,2,0,0,0,2,0,3,0,1,1,2,2,1,3,0,3,0,2,2,3,1,2,1,0,0,2,0,3,1,2,1,0,3,0,3,0,1,0,0,1,0,0,1,2,3,1,2,0,2,3,1,2,3,2,3,2,0,2,1,2,0,0,0,0,1,2,2,1,2,0,1,3,1,2,3,1,2,0,1,3,2,3,0,2,0,3,1,1,2,0,2,2,2,1,0,1,2,2,3,3,0,2,2,2,2,2,2,1,1,2,1,0,1,3,2,2,0,1,3,2,2,2	
 void print_wspr_symbols(const char* call, const char* loc, uint8_t power, uint8_t symbols[])
 {
-	PRINTF("%s %s %ddBm\n", call, loc, power);
+	PRINTF_P("%s %s %ddBm\n", call, loc, power);
 	for (uint8_t i = 0; i < WSPR_SYMBOL_COUNT; ++i)
 	{
-		PRINTF("%d,", symbols[i]);
+		PRINTF_P("%d,", symbols[i]);
 	}
-	PRINT("\n");
+	PRINT_P("\n");
 }
 
 void ssd1306_main_window(time_t now)
@@ -994,11 +996,11 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2)
 		display.print(txt2);
 	}
 
-//	PRINTF("ssd1306_text: %s / %s\n", txt1, txt2);
-	PRINTF("ssd1306_text[%d]: ", delay_ms);
-	if (txt1 != NULL)	Serial.print(txt1);
-	if (txt2 != NULL) {	Serial.print(" / "); Serial.print(txt2); }
-	Serial.println();
+//	PRINTF_P("ssd1306_text: %s / %s\n", txt1, txt2);
+	PRINTF_P("ssd1306_text[%d]: ", delay_ms);
+	if (txt1 != NULL)	PRINT(txt1);
+	if (txt2 != NULL) {	PRINT_P(" / "); PRINT(txt2); }
+	PRINT_P("\n");
 
 	display.setCursor(8, 52);
 	display.print(WiFi.SSID());              // Tell us what network we're connected to
@@ -1014,7 +1016,7 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2)
 
 void ssd1306_wifi_page()
 {
-	PRINTF("Connected to %s (IP:%s/%s, GW:%s, RSSI %d)\n"
+	PRINTF_P("Connected to %s (IP:%s/%s, GW:%s, RSSI %d)\n"
 		, WiFi.SSID().c_str()              
 		, WiFi.localIP().toString().c_str()				// Send the IP address of the ESP8266 to the computer
 		, WiFi.subnetMask().toString().c_str()
