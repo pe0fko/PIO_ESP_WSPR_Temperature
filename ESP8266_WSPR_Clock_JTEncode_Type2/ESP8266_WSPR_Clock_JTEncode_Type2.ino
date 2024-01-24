@@ -71,7 +71,7 @@
   #define   HAM_CALL        "PE0FKO"        // Ham radio call sign
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
   #define   HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-  #define   HAM_POWER       8				// Power TX in dBm
+  #define   HAM_POWER       9				// Power TX in dBm
 //  #define	WIFI_SSID_01	"pe0fko_ziggo",	"NetwerkBeheer114"
 #elif defined LOC_PA_PE0FKO
   #define	WSPR_TX_FREQ	7040000UL		// 40m   7.040000 -  7.040200
@@ -79,14 +79,16 @@
   #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
   #define   HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-  #define   HAM_POWER       8				// Power TX in dBm
+  #define   HAM_POWER       9				// Power TX in dBm
 #elif defined LOC_LA_MOTHE_40m
   #define	WSPR_TX_FREQ	7040000UL		// 40m   7.040000 -  7.040200
   #define   HAM_PREFIX      "F/"			// Prefix of the ham call
   #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
   #define   HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
-  #define   HAM_POWER       8				// Power TX in dBm
+  #define   HAM_POWER       9				// Power TX in dBm
+
+
 #elif defined LOC_LA_MOTHE_30m
   #define	WSPR_TX_FREQ	10140100UL		// 30m  10.140100 - 10.140300
   #define   HAM_PREFIX      "F/"			// Prefix of the ham call
@@ -101,6 +103,8 @@
   #define   HAM_SUFFIX      ""				// Suffix of the ham call
   #define   HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
   #define   HAM_POWER       4				// Power TX in dBm
+
+
 #else
   #error    "Specify the Location..."
 #endif
@@ -421,8 +425,6 @@ void setup()
 #endif
 
 #ifdef FEATURE_OTA
-//	init_ota();
-
 	// Start OTA server.
 	ArduinoOTA.setHostname((const char *)HostName.c_str());
 	ArduinoOTA.onStart([]() { ssd1306_text(200, "Running", "OTA update"); });
@@ -507,7 +509,7 @@ void init_oneWire()
 #ifdef FEATURE_mDNS
 static void init_mdns()
 {
-	ssd1306_text(200, "mDNS Setup");
+	ssd1306_text(200, "mDNS", "Setup");
 	if (MDNS.begin(HostName.c_str()))
 		MDNS.addService("http", "tcp", 80);
 	else
@@ -515,145 +517,9 @@ static void init_mdns()
 }
 #endif
 
-
-#ifdef FEATURE_OTA
-
-#if 0
-
-static void init_ota()
-{
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
-
-  // Hostname defaults to esp8266-[ChipID]
-  // ArduinoOTA.setHostname("myesp8266");
-
-  // No authentication by default
-  // ArduinoOTA.setPassword("admin");
-
-  // Password can be set with it's md5 value as well
-  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
-/*
-	ArduinoOTA.onStart([]() 
-	{
-		String type;
-		if (ArduinoOTA.getCommand() == U_FLASH) {
-			type = "sketch";
-	} else {  // U_FS
-		type = "filesystem";
-	}
-
-	// NOTE: if updating FS this would be the place to unmount FS using FS.end()
-
-	Serial.println("Start updating " + type);
-	});
-  
-	ArduinoOTA.onEnd([]() 
-	{
-		Serial.println("\nEnd");
-	});
-  
-	ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) 
-	{
-		Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-	});
-  
-	ArduinoOTA.onError([](ota_error_t error) 
-	{
-		Serial.printf("Error[%u]: ", error);
-		if (error == OTA_AUTH_ERROR) {
-			Serial.println("Auth Failed");
-		} else if (error == OTA_BEGIN_ERROR) {
-			Serial.println("Begin Failed");
-		} else if (error == OTA_CONNECT_ERROR) {
-			Serial.println("Connect Failed");
-		} else if (error == OTA_RECEIVE_ERROR) {
-			Serial.println("Receive Failed");
-		} else if (error == OTA_END_ERROR) {
-			Serial.println("End Failed");
-		}
-	});
-*/
-	// Start OTA server.
-	ArduinoOTA.setHostname((const char *)HostName.c_str());
-	ArduinoOTA.begin();
-}
-
-#elif 0
-// No authentication by default
-// ArduinoOTA.setPassword("admin");
-// Password can be set with it's md5 value as well
-// MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-// ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
-void ota_start()
-{
-	PRINT_P("OTA Start\n");
-	ssd1306_text(50, "OTA-START");
-}
-
-void ota_stop()
-{
-	PRINT_P("OTA Stop\n");
-	ssd1306_text(100, "OTA-STOP");
-	delay(200);
-	Serial.flush();
-	ESP.restart();
-}
-
-static int report_perc = 0;
-
-void ota_progress(unsigned int progress, unsigned int total)
-{
-//	PRINTF_P("OTA Progress %d/%d\n", progress, total);
-
-	int perc = (uint32_t)progress * 100UL / total;
-	if (perc >= report_perc) 
-	{
-		PRINTF_P("OTA Progress %d%%\n", perc);
-		report_perc += 5;
-
-		ssd1306_background();
-		display.setTextSize(1);
-		display.setCursor(16 , 16);
-		display.printf("Progress: %u%%\r", perc );
-		display.display();
-	}
-}
-
-static void ota_error(ota_error_t error) 
-{
-    PRINTF_P("OTA Error[%u]: ", error);
-
-    if (error == OTA_AUTH_ERROR) 			PRINT_P("Auth Failed")
-    else if (error == OTA_BEGIN_ERROR) 		PRINT_P("Begin Failed")
-    else if (error == OTA_CONNECT_ERROR) 	PRINT_P("Connect Failed")
-    else if (error == OTA_RECEIVE_ERROR) 	PRINT_P("Receive Failed")
-    else if (error == OTA_END_ERROR) 		PRINT_P("End Failed")
-}
-
-static void init_ota()
-{
-	PRINT_P("OTA Initialize\n");
-	ssd1306_text(200, "OTA setup");
-
-	ArduinoOTA.onStart(ota_start);
-	ArduinoOTA.onProgress(ota_progress);
-	ArduinoOTA.onEnd(ota_stop);
-	ArduinoOTA.onError(ota_error);
-
-	ArduinoOTA.setHostname(HostName.c_str());
-	ArduinoOTA.setPassword("pe0fko");
-	ArduinoOTA.begin();
-}
-#endif
-#endif
-
 static void init_si5351()
 {
-	ssd1306_text(200, "Si5351 init");
+	ssd1306_text(200, "Si5351", "Setup");
 
 	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, SI5351_FREQ_CORRECTION_02) )
 	{
@@ -664,12 +530,12 @@ static void init_si5351()
 		si5351.set_clock_pwr(SI5351_CLK0, 0);                 // Set power down
 		si5351.set_clock_pwr(SI5351_CLK1, 0);
 		si5351.set_clock_pwr(SI5351_CLK2, 0);
-		ssd1306_text(200, "Si5351 OK");
+		ssd1306_text(200, "Si5351", "OK");
 		PRINT_P("SI5351 Initialized\n");
 	}
 	else
 	{
-		ssd1306_text(200, "Si5351 ERROR");
+		ssd1306_text(200, "Si5351", "Not found");
 		PRINT_P("ERROR: SI5351 not found on I2C bus!\n");
 	}
 }
@@ -1089,16 +955,21 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2)
 		display.print(txt2);
 	}
 
+	if (WiFi.SSID().length() > 0)
+	{
+		String ssid("SSID:"); ssid += WiFi.SSID();
+		uint16_t  w = getFontStringWidth(ssid);
+		display.setCursor((display.width() - w) / 2 , 52);
+		display.print(ssid);
+	}
+
+	display.display();
+
 //	PRINTF_P("ssd1306_text: %s / %s\n", txt1, txt2);
 	PRINTF_P("ssd1306_text[%d]: ", delay_ms);
 	if (txt1 != NULL)	PRINT(txt1);
 	if (txt2 != NULL) {	PRINT_P(" / "); PRINT(txt2); }
 	PRINT_P("\n");
-
-	display.setCursor(8, 52);
-	display.print(WiFi.SSID());              // Tell us what network we're connected to
-
-	display.display();
 
 	timer_display_auto_off = millis();					// Start the display ON timer
 	display_switch_status = DISPLAY_ON;
