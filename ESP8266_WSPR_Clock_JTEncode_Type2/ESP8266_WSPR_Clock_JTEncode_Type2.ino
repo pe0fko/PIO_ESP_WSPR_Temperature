@@ -39,17 +39,17 @@
 //#define	LOC_LA_MOTHE_30m
 //#define	LOC_LA_MOTHE_20m
 
-//#define		FEATURE_OTA
+#define		FEATURE_OTA
 #define		FEATURE_mDNS
 //#define		FEATURE_CARRIER
 //#define		FEATURE_1H_FAST_TX
 //#define		FEATURE_PRINT_TIMESLOT
+#define     USAGE_WIFIMULTI
 
 // WSPR Type 1:
 // The standard message is <callsign> + <4 character locator> + <dBm transmit power>; 
 // for example “K1ABC FN20 37” is a signal from station K1ABC in Maidenhead grid cell
 // “FN20”, sending 37 dBm, or about 5.0 W (legal limit for 630 m).
-
 // Messages with a compound callsign and/or 6 digit locator use a two-transmission sequence.
 // WSPR Type 2:
 // The <first transmission> carries compound callsign and power level, or standard callsign,
@@ -120,19 +120,12 @@
 //#define	WSPR_TX_FREQ		144489900UL	// 2m  144.489900 - 144.490100
 #endif
 
-#ifndef WIFI_SSID_01
-#define		WIFI_SSID_01		"pe0fko_guest",	"Welkom-114"
-#define		WIFI_SSID_02		"pe0fko_ziggo",	"NetwerkBeheer114"
-#define		WIFI_SSID_03		"pe0fko-4g",	"NETWERKBEHEER"
-#define		WIFI_SSID_04		"pe0fko_deco",	"NetwerkBeheer114"
-#endif
-
 #define		MYTZ				TZ_Europe_Amsterdam	// TZ string for currect location
 
 #define		SI5351_FREQ_CORRECTION_01   (13126UL)
 #define		SI5351_FREQ_CORRECTION_02   (116000UL)
 
-#define		HOSTNAME          	"wsprtx"
+#define		HOSTNAME          	"WsprTX-"
 #define		TEMP_CORRECTION   	0.0			// Change at 18/08/2022
 #define		WSPR_DELAY        	683			// Delay value for WSPR
 #define		WSPR_SLOTS_MAX		30			// 30 times 2min slots in a hour
@@ -150,7 +143,7 @@
 #include <TZ.h>
 #include <sntp.h>
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
+//#include <ESP8266WiFiMulti.h>
 #include <DNSServer.h>
 //#include <WiFiManager.h>
 #include <SPI.h>
@@ -168,6 +161,11 @@
 #ifdef FEATURE_OTA
 #include <ArduinoOTA.h>
 #endif
+#ifdef USAGE_WIFIMULTI
+#include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
+ESP8266WiFiMulti wifiMulti;
+#endif
+#include "WiFi_SSID.h"
 
 #if (SSD1306_LCDHEIGHT != 64)
 #error("Height incorrect, please fix the file Adafruit_SSD1306.h, enable the SSD1306_128_64!");
@@ -184,7 +182,7 @@
  #define PRINTF_P(...)		{ }
 #endif
 
-ESP8266WiFiMulti		wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+//ESP8266WiFiMulti		wifiMulti;     // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 boolean					connectioWasAlive = true;		// ESP8266WiFiMulti
 //WiFiManager				wifiManager;
 Adafruit_SSD1306		display(-1);
@@ -193,7 +191,7 @@ JTEncode				wspr;
 
 WiFiEventHandler		wifiConnectHandler;			// WiFi connect event handler
 WiFiEventHandler		wifiDisconnectHandler;		// WiFi disconnect event handler
-
+static	String			HostName;
 OneWire					oneWire(ONE_WIRE_BUS);
 DallasTemperature		sensors(&oneWire);
 
@@ -258,7 +256,16 @@ void make_slot_plan(bool setup)
 		}
 	}
 	else
-#endif
+
+#elif 1
+
+	// Every even slot a TX until the first hour.
+	for (int i = 0; i < WSPR_SLOTS_MAX; i += 2)
+	{
+		wspr_slot_tx[i] = WSPR_TX_TYPE_1;
+	}
+
+#elif 0
 	{
 		int   s0,s1,s2,s3,t;
 		float tf;
@@ -292,6 +299,7 @@ void make_slot_plan(bool setup)
 		wspr_slot_tx[s3]	= WSPR_TX_TYPE_2;	// Comp, no locator
 #endif
 	}
+#endif
 
 #ifdef FEATURE_PRINT_TIMESLOT
 	PRINT_P("Time Slot: ");
@@ -329,9 +337,9 @@ void setup()
 	Serial.setTimeout(2000);
 	while(!Serial) yield();
 #ifdef DEBUG_ESP_PORT
-	Serial.setDebugOutput(true);
+//	Serial.setDebugOutput(true);
 #endif
-	delay(100);
+	delay(300);
 
 	PRINT_P("\n=== PE0FKO, TX WSPR temperature coded\n");
 	PRINTF_P ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
@@ -348,30 +356,24 @@ void setup()
 	pinMode(LED_BUILTIN, OUTPUT);		// BuildIn LED
 
 	// Try to startup the WiFi Multi connection with the strongest AP found.
-	ssd1306_text(200, "WiFiMulti Init", HOSTNAME);
+
+    // Set Hostname.
+	HostName = HOSTNAME + String(ESP.getChipId(), HEX);
+	WiFi.hostname(HostName);
+
+	ssd1306_text(200, "WiFiMulti Init", HostName.c_str());
 	WiFi.mode(WIFI_STA);				// Set WiFi to station mode
 	WiFi.setAutoReconnect(true);		// Keep WiFi connected
-	WiFi.hostname(HOSTNAME);
 
 	// Register FiFi event handlers
 	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
 	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
 
-#ifdef FEATURE_mDNS
-	init_mdns();						// Init the broadcast DNS server (.local)
-#endif
-
-#ifdef WIFI_SSID_01
-	wifiMulti.addAP(WIFI_SSID_01);
-#endif
-#ifdef WIFI_SSID_02
-	wifiMulti.addAP(WIFI_SSID_02);
-#endif
-#ifdef WIFI_SSID_03
-	wifiMulti.addAP(WIFI_SSID_03);
-#endif
-#ifdef WIFI_SSID_04
-	wifiMulti.addAP(WIFI_SSID_04);
+#ifdef USAGE_WIFIMULTI
+	for(uint8_t i = 0; i < WifiApListNumber; i++)
+		wifiMulti.addAP(WifiApList[i].ssid, WifiApList[i].passwd);
+#else
+	WiFi.begin(WIFI_SSID_01);
 #endif
 
 #if 0
@@ -414,8 +416,17 @@ void setup()
 
 	init_sntp_now();					// Init the sNTP client to get the real time
 
+#ifdef FEATURE_mDNS
+	init_mdns();						// Init the broadcast DNS server (.local)
+#endif
+
 #ifdef FEATURE_OTA
-	init_ota();
+//	init_ota();
+
+	// Start OTA server.
+	ArduinoOTA.setHostname((const char *)HostName.c_str());
+	ArduinoOTA.onStart([]() { ssd1306_text(200, "Running", "OTA update"); });
+	ArduinoOTA.begin();
 #endif
 
 	init_oneWire();						// Init the Dallas temperature one-wire sensor
@@ -463,7 +474,7 @@ void configModeCallback (WiFiManager *myWiFiManager)
 
 void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo) 
 {
-	PRINTF_P("WiFi Cconnected: ip:%s/%s gw:%s\n", 
+	PRINTF_P("WiFi connected: IP:%s/%s GW:%s\n", 
 		ipInfo.ip.toString().c_str(),
 		ipInfo.mask.toString().c_str(),
 		ipInfo.gw.toString().c_str()
@@ -497,14 +508,80 @@ void init_oneWire()
 static void init_mdns()
 {
 	ssd1306_text(200, "mDNS Setup");
-	if (MDNS.begin(HOSTNAME))
+	if (MDNS.begin(HostName.c_str()))
 		MDNS.addService("http", "tcp", 80);
 	else
 		PRINT_P("mDNS ERROR!\n");
 }
 #endif
 
+
 #ifdef FEATURE_OTA
+
+#if 0
+
+static void init_ota()
+{
+  // Port defaults to 8266
+  // ArduinoOTA.setPort(8266);
+
+  // Hostname defaults to esp8266-[ChipID]
+  // ArduinoOTA.setHostname("myesp8266");
+
+  // No authentication by default
+  // ArduinoOTA.setPassword("admin");
+
+  // Password can be set with it's md5 value as well
+  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
+  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+/*
+	ArduinoOTA.onStart([]() 
+	{
+		String type;
+		if (ArduinoOTA.getCommand() == U_FLASH) {
+			type = "sketch";
+	} else {  // U_FS
+		type = "filesystem";
+	}
+
+	// NOTE: if updating FS this would be the place to unmount FS using FS.end()
+
+	Serial.println("Start updating " + type);
+	});
+  
+	ArduinoOTA.onEnd([]() 
+	{
+		Serial.println("\nEnd");
+	});
+  
+	ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) 
+	{
+		Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+	});
+  
+	ArduinoOTA.onError([](ota_error_t error) 
+	{
+		Serial.printf("Error[%u]: ", error);
+		if (error == OTA_AUTH_ERROR) {
+			Serial.println("Auth Failed");
+		} else if (error == OTA_BEGIN_ERROR) {
+			Serial.println("Begin Failed");
+		} else if (error == OTA_CONNECT_ERROR) {
+			Serial.println("Connect Failed");
+		} else if (error == OTA_RECEIVE_ERROR) {
+			Serial.println("Receive Failed");
+		} else if (error == OTA_END_ERROR) {
+			Serial.println("End Failed");
+		}
+	});
+*/
+	// Start OTA server.
+	ArduinoOTA.setHostname((const char *)HostName.c_str());
+	ArduinoOTA.begin();
+}
+
+#elif 0
 // No authentication by default
 // ArduinoOTA.setPassword("admin");
 // Password can be set with it's md5 value as well
@@ -561,14 +638,17 @@ static void init_ota()
 {
 	PRINT_P("OTA Initialize\n");
 	ssd1306_text(200, "OTA setup");
+
 	ArduinoOTA.onStart(ota_start);
 	ArduinoOTA.onProgress(ota_progress);
 	ArduinoOTA.onEnd(ota_stop);
 	ArduinoOTA.onError(ota_error);
-	ArduinoOTA.setHostname(HOSTNAME);
-//	ArduinoOTA.setPassword("pe0fko");
+
+	ArduinoOTA.setHostname(HostName.c_str());
+	ArduinoOTA.setPassword("pe0fko");
 	ArduinoOTA.begin();
 }
+#endif
 #endif
 
 static void init_si5351()
@@ -680,7 +760,11 @@ void loop()
 #endif
 
 	// If still no WiFi then try again later...
-	switch(wifiMulti.run()) 
+#ifdef USAGE_WIFIMULTI
+	switch(wifiMulti.run(4000)) 
+#else
+  	switch(WiFi.status())
+#endif
 	{
 		case WL_CONNECTED:
 		break;
@@ -702,7 +786,7 @@ void loop()
 		ssd1306_text(200, "WiFi connect", "No SSID avail");
 		return;		// Return the loop!!
 
-//		case WL_IDLE_STATUS:
+		case WL_IDLE_STATUS:
 		default:
 		ssd1306_text(200, "WiFi connect", "ERROR");
 		return;		// Return the loop!!
@@ -820,6 +904,15 @@ static 	int8_t 		last_sec	= -1;
 					timer_wspr_bit_ms = millis();
 					wspr_bit_tx();
 				}
+			}
+
+			//
+			//++ Set the random seed ones every day.
+			//
+			if (now % 3600*24 == 0)
+			{
+				PRINT_P("Set the const ramdom seed number.\n");
+				randomSeed(0x1502);
 			}
 
 			//
@@ -1038,5 +1131,5 @@ void ssd1306_wifi_page()
 	timer_display_auto_off = millis();					// Start the display ON timer
 	display_switch_status = DISPLAY_ON;
 
-//	delay(5000);
+	delay(5000);
 }
