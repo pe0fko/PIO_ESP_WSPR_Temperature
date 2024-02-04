@@ -222,9 +222,11 @@ static	struct {	int 	ChipId;
 					String	Hostname;
 					float	TempCorrection;			// Change at 18/08/2022
 				} ESPChipInfo[] =
-{	{ 0x7b06f7, 13126UL,  0x1502, 4*60000, "wsprtx-tst", -2.5 }	// Arduino shield
-,	{ 0x62df37, 116000UL, 0x0257, 1*60000, "wsprtx", 0.0 }		// Breadboard
-,	{ -1, 0Ul, 0X5555, 1*60000, "wspr-esp", 0.0 }				// Default
+
+// 13822, 13685, 
+{	{ 0x7b06f7, 13220,	0,			4*60000, "wsprtx-prod", -2.5 }	// Arduino shield, 0x19570215
+,	{ 0x62df37, 116900,	0x19561113, 1*60000, "wsprtx", 0.0 }		// Breadboard
+,	{ -1, 		0,		0X5555,		1*60000, "wspr-esp", 0.0 }				// Default
 };
 
 static		int		CHIP_FREQ_CORRECTION;
@@ -241,7 +243,7 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2=NULL);
 void make_slot_plan(bool setup)
 {
     // Clean the old slot plan.
-	wspr_slot_band[0] = random(4, 196);	// All TX in the hour on the same band
+	wspr_slot_band[0] = random(20, 180);	// All TX in the hour on the same band
 	for (int i = 0; i < WSPR_SLOTS_MAX; i++)
 	{
 		wspr_slot_tx  [i]		= WSPR_TX_NONE;
@@ -273,10 +275,12 @@ void make_slot_plan(bool setup)
 	// Even slot 40m, odd slot 20m
 	for (int i = 0; i < WSPR_SLOTS_MAX; i += 2)
 	{
-		wspr_slot_tx  [i+0]    = WSPR_TX_TYPE_2;
-		wspr_slot_freq[i+0][0] = WSPR_TX_FREQ_40m;
-		wspr_slot_tx  [i+1]    = WSPR_TX_TYPE_2;
-		wspr_slot_freq[i+1][0] = WSPR_TX_FREQ_20m;
+//		wspr_slot_band[i]		= 100;				// Test band midden
+		wspr_slot_tx  [i+0]		= WSPR_TX_TYPE_2;
+		wspr_slot_freq[i+0][0]	= WSPR_TX_FREQ_40m;
+//		wspr_slot_band[i+1]		= 100;				// Test band midden
+		wspr_slot_tx  [i+1]		= WSPR_TX_TYPE_2;
+		wspr_slot_freq[i+1][0]	= WSPR_TX_FREQ_20m;
 	}
 
 #elif 0
@@ -373,9 +377,9 @@ void setup()
 	Serial.setTimeout(2000);
 	while(!Serial) yield();
 #ifdef DEBUG_ESP_PORT
-//	Serial.setDebugOutput(true);
+	Serial.setDebugOutput(true);
 #endif
-	delay(300);
+	delay(1000);
 
 	PRINT_P("\n=== PE0FKO, TX WSPR temperature coded\n");
 	PRINTF_P ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
@@ -438,16 +442,19 @@ void setup()
 
 	timer_20ms_loop = millis();
 
-#ifdef FEATURE_CARRIER
-
-	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][0], SI5351_CLK0 );
+//#ifdef FEATURE_CARRIER
+#if 1
+	si5351.set_freq( SI5351_FREQ_MULT * 7040100, SI5351_CLK0 );
 	wspr_tx_enable(SI5351_CLK0);
-	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][1], SI5351_CLK1 );
-	wspr_tx_enable(SI5351_CLK1);
-	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][2], SI5351_CLK2 );
-	wspr_tx_enable(SI5351_CLK2);
 
-	PRINTF_P("CW Carrier on: %fMHz\n", (float)(WSPR_TX_FREQ + 100)/1e6);
+//	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][0], SI5351_CLK0 );
+//	wspr_tx_enable(SI5351_CLK0);
+//	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][1], SI5351_CLK1 );
+//	wspr_tx_enable(SI5351_CLK1);
+//	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][2], SI5351_CLK2 );
+//	wspr_tx_enable(SI5351_CLK2);
+
+//	PRINTF_P("CW Carrier on: %fMHz\n", (float)(WSPR_TX_FREQ + 100)/1e6);
 #endif
 
 	ssd1306_text(200, "Start", "looping");
@@ -546,7 +553,7 @@ void loop()
 			value_wspr_bit_ms_float += value_wspr_bit_ms_incr;	// Increment the float ms counter (exact counting)
 			value_wspr_bit_ms = value_wspr_bit_ms_float + 0.5;	//   copy and round to uint32_t
 	
-			if (ms > 3)
+			if (ms > 7)
 				PRINTF_P("Overrun bit %3d: %3d ms\n", wspr_symbol_index, ms);
 		}
 	}
@@ -730,6 +737,8 @@ static 	int8_t 		last_sec	= -1;
 
 static void init_si5351()
 {
+	PRINTF_P("Si5351 init: xtal:%d, correction:%d\n", SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION);
+
 	ssd1306_text(200, "Si5351", "Setup");
 
 	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION) )
@@ -737,6 +746,7 @@ static void init_si5351()
 		wspr_tx_disable(SI5351_CLK0);
 		wspr_tx_disable(SI5351_CLK1);
 		wspr_tx_disable(SI5351_CLK2);
+
 		ssd1306_text(200, "Si5351", "OK");
 	}
 	else
@@ -805,7 +815,8 @@ void wspr_tx_bit()
 
 void wspr_tx_freq(si5351_clock clk)
 {
-	if (wspr_slot_freq[wspr_slot][clk] != 0)
+	if (wspr_slot_tx[wspr_slot] != WSPR_TX_NONE && 
+	    wspr_slot_freq[wspr_slot][clk] != 0)
 	{
 		uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[wspr_slot][clk] + wspr_slot_band[wspr_slot]);
 		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) )
@@ -815,9 +826,10 @@ void wspr_tx_freq(si5351_clock clk)
 
 void wspr_tx_enable(si5351_clock clk)
 {
-	if (wspr_slot_freq[wspr_slot][clk] != 0)
+	if (wspr_slot_tx[wspr_slot] != WSPR_TX_NONE && 
+	    wspr_slot_freq[wspr_slot][clk] != 0)
 	{
-		PRINTF_P("TX WSPR start %d: slot %d, freq %fMHz + %dHz\n", 
+		PRINTF_P("TX WSPR start %d: slot %d, freq %.6fMHz + %dHz\n", 
 				clk, wspr_slot, 
 				wspr_slot_freq[wspr_slot][clk] / 1000000.0, 
 				wspr_slot_band[wspr_slot]);
@@ -825,14 +837,13 @@ void wspr_tx_enable(si5351_clock clk)
 		si5351.set_clock_pwr(clk, 1);
 		si5351.output_enable(clk, 1);
 	}
-}
+ }
 
 void wspr_tx_disable(si5351_clock clk)
 {
 	si5351.set_clock_pwr(clk, 0);
 	si5351.output_enable(clk, 0);
 }
-
 
 void ssd1306_main_window(time_t now)
 {
@@ -899,10 +910,10 @@ void ssd1306_main_window(time_t now)
 	}
 
 	// Display the used bands
-	sprintf(buffer, "%s/%s/%s", 
-			wspr_slot_freq[ns][0] == 0 ? "x" : String(300/(wspr_slot_freq[ns][0]/1000000)).c_str(),
-			wspr_slot_freq[ns][1] == 0 ? "x" : String(300/(wspr_slot_freq[ns][1]/1000000)).c_str(),
-			wspr_slot_freq[ns][2] == 0 ? "x" : String(300/(wspr_slot_freq[ns][2]/1000000)).c_str()
+	sprintf(buffer, "%s/%s/%s"
+			, wspr_slot_freq[ns][0] == 0 ? "x" : String(300/(wspr_slot_freq[ns][0]/1000000)).c_str()
+			, wspr_slot_freq[ns][1] == 0 ? "x" : String(300/(wspr_slot_freq[ns][1]/1000000)).c_str()
+			, wspr_slot_freq[ns][2] == 0 ? "x" : String(300/(wspr_slot_freq[ns][2]/1000000)).c_str()
 			);
 
 	display.getTextBounds(buffer, 0, 0, &x, &y, &w, &h);
