@@ -1,4 +1,4 @@
-/* *********************************************
+// *********************************************
 // WSPR Clock TX ESP8266.
 // 01/05/2021 Fred Krom, pe0fko
 //
@@ -7,25 +7,20 @@
 //					- Set Debug port on Serial1
 //          - Erease Flash: "All Flash contents"
 //
-// "PE0FKO JO32 10"
-// SYMBOL: 3,3,2,0,2,2,0,2,3,0,2,2,3,3,3,0,0,0,1,2,0,1,2,3,1,1,3,2,0,2,2,2,2,0,1,2,0,1,2,3,2,0,0,0,2,0,3,0,1,1,2,2,1,3,0,3,0,2,2,3,1,2,1,0,0,2,0,3,1,2,1,0,3,0,3,0,1,0,0,1,0,0,1,2,3,1,2,0,2,3,1,2,3,2,3,2,0,2,1,2,0,0,0,0,1,2,2,1,2,0,1,3,1,2,3,1,2,0,1,3,2,3,0,2,0,3,1,1,2,0,2,2,2,1,0,1,2,2,3,3,0,2,2,2,2,2,2,1,1,2,1,0,1,3,2,2,0,1,3,2,2,2
-// "PE0FKO JN13 10"
-// SYMBOL: 3,1,2,2,2,2,0,2,3,2,2,0,3,3,3,0,0,0,1,0,0,3,0,1,1,3,3,2,0,0,0,2,2,0,1,0,0,3,2,3,2,0,0,2,2,0,3,0,1,1,2,2,1,3,0,3,0,0,2,3,1,0,1,0,0,0,0,3,1,2,1,0,3,0,3,2,1,0,0,1,0,2,1,0,3,3,0,0,2,1,1,2,3,2,1,2,0,2,1,0,0,0,0,2,1,0,2,3,2,0,1,3,1,2,3,1,2,2,1,3,2,3,0,0,0,1,1,1,2,2,2,2,2,3,0,1,2,0,3,3,0,0,0,2,2,0,2,3,1,2,3,0,1,3,2,0,0,3,3,2,2,0,
+// Using library ESP8266WiFi at version 1.0
+// Using library DNSServer at version 1.1.1
+// Using library SPI at version 1.0
+// Using library Wire at version 1.0
+// Using library Adafruit_GFX_Library at version 1.11.9
+// Using library Adafruit_BusIO at version 1.15.0
+// Using library Adafruit_SSD1306_Wemos_Mini_OLED at version 1.1.2
+// Using library Etherkit_Si5351 at version 2.1.4
+// Using library Etherkit_JTEncode at version 1.3.1
+// Using library OneWire at version 2.3.7
+// Using library DallasTemperature at version 3.9.0
+// Using library ESP8266mDNS at version 1.2
+// Using library ArduinoOTA at version 1.0
 //
-Using library ESP8266WiFi at version 1.0 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/ESP8266WiFi
-Using library DNSServer at version 1.1.1 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/DNSServer
-Using library SPI at version 1.0 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/SPI
-Using library Wire at version 1.0 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/Wire
-Using library Adafruit_GFX_Library at version 1.11.9 in folder: /home/fred/Arduino/libraries/Adafruit_GFX_Library
-Using library Adafruit_BusIO at version 1.15.0 in folder: /home/fred/Arduino/libraries/Adafruit_BusIO
-Using library Adafruit_SSD1306_Wemos_Mini_OLED at version 1.1.2 in folder: /home/fred/Arduino/libraries/Adafruit_SSD1306_Wemos_Mini_OLED
-Using library Etherkit_Si5351 at version 2.1.4 in folder: /home/fred/Arduino/libraries/Etherkit_Si5351
-Using library Etherkit_JTEncode at version 1.3.1 in folder: /home/fred/Arduino/libraries/Etherkit_JTEncode
-Using library OneWire at version 2.3.7 in folder: /home/fred/Arduino/libraries/OneWire
-Using library DallasTemperature at version 3.9.0 in folder: /home/fred/Arduino/libraries/DallasTemperature
-Using library ESP8266mDNS at version 1.2 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/ESP8266mDNS
-Using library ArduinoOTA at version 1.0 in folder: /home/fred/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/libraries/ArduinoOTA
-//*/
 
 #define		VERSION		"V2.0"
 
@@ -64,42 +59,43 @@ Using library ArduinoOTA at version 1.0 in folder: /home/fred/.arduino15/package
 // Update JTEncode.cpp library at line 1000 for 1 char prefix!
 
 #if defined LOC_PE0FKO
-  #define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
-  #define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_20m
-  #define   HAM_PREFIX      ""				// Prefix of the ham call
-  #define   HAM_CALL        "PE0FKO"        // Ham radio call sign
-  #define   HAM_SUFFIX      ""				// Suffix of the ham call
-  #define   HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-  #define   HAM_POWER       11 //2 //10				// Power TX in dBm, 9dBm measure
-//  #define	WIFI_SSID_01	"pe0fko_ziggo",	"NetwerkBeheer114"
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_20m
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_2m
+	#define	HAM_PREFIX      ""				// Prefix of the ham call
+	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
+	#define	HAM_SUFFIX      ""				// Suffix of the ham call
+	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
+	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
+//  #define	WIFI_SSID_01	"pe0fko_ziggo",	"<pwd>"
 #elif defined LOC_PA_PE0FKO
-  #define	WSPR_TX_FREQ	WSPR_TX_FREQ_40m	// 40m   7.040000 -  7.040200
-  #define   HAM_PREFIX      "PA/"			// Prefix of the ham call
-  #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
-  #define   HAM_SUFFIX      ""				// Suffix of the ham call
-  #define   HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-  #define   HAM_POWER       10				// Power TX in dBm
+	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_40m	// 40m   7.040000 -  7.040200
+	#define	HAM_PREFIX      "PA/"			// Prefix of the ham call
+	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
+	#define	HAM_SUFFIX      ""				// Suffix of the ham call
+	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
+	#define	HAM_POWER       10				// Power TX in dBm
 #elif defined LOC_LA_MOTHE_40m
-  #define	WSPR_TX_FREQ	WSPR_TX_FREQ_40m	// 40m   7.040000 -  7.040200
-  #define   HAM_PREFIX      "F/"			// Prefix of the ham call
-  #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
-  #define   HAM_SUFFIX      ""				// Suffix of the ham call
-  #define   HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
-  #define   HAM_POWER       10				// Power TX in dBm
+	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_40m	// 40m   7.040000 -  7.040200
+	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
+	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
+	#define	HAM_SUFFIX      ""				// Suffix of the ham call
+	#define	HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
+	#define	HAM_POWER       10				// Power TX in dBm
 #elif defined LOC_LA_MOTHE_30m
-  #define	WSPR_TX_FREQ	WSPR_TX_FREQ_30m	// 30m  10.140100 - 10.140300
-  #define   HAM_PREFIX      "F/"			// Prefix of the ham call
-  #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
-  #define   HAM_SUFFIX      ""				// Suffix of the ham call
-  #define   HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
-  #define   HAM_POWER       5				// Power TX in dBm
+	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_30m	// 30m  10.140100 - 10.140300
+	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
+	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
+	#define	HAM_SUFFIX      ""				// Suffix of the ham call
+	#define	HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
+	#define	HAM_POWER       5				// Power TX in dBm
 #elif defined LOC_LA_MOTHE_20m
-  #define	WSPR_TX_FREQ	WSPR_TX_FREQ_20m	// 20m  14.097000 - 14.097200
-  #define   HAM_PREFIX      "F/"			// Prefix of the ham call
-  #define   HAM_CALL        "PE0FKO"		// Ham radio call sign
-  #define   HAM_SUFFIX      ""				// Suffix of the ham call
-  #define   HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
-  #define   HAM_POWER       4				// Power TX in dBm
+	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_20m	// 20m  14.097000 - 14.097200
+	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
+	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
+	#define	HAM_SUFFIX      ""				// Suffix of the ham call
+	#define	HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
+	#define	HAM_POWER       4				// Power TX in dBm
 
 #else
   #error    "Specify the Location..."
@@ -193,7 +189,6 @@ const	uint32_t		value_ntp_faild_reboot	= 3600 * 1000;		// 1 hour (ntp must be up
 static	uint32_t		timer_ntp_faild_reboot;
 const	uint32_t		sntp_update_delay		= 30 * 60000;		// NTP update every 30min
 volatile bool			ntp_time_sync;
-//char					PASSWORD[32]			= "12345678";		// Will use the CPU ID for the password!
 static	float			temperature_now			= 0.0;
 static  uint8_t			switchStatusLast		= HIGH;				// last status hardware switch
 static	enum { DISPLAY_OFF,	DISPLAY_ON } display_status;
@@ -221,9 +216,8 @@ static	struct {	int 	ChipId;
 					int		DisplayAutoOff;
 					String	Hostname;
 					float	TempCorrection;			// Change at 18/08/2022
-				} ESPChipInfo[] =
-
-// 13822, 13685, 
+				} ESPChipInfo[] 
+=
 {	{ 0x7b06f7, 13220,	0,			4*60000, "wsprtx-prod", -2.5 }	// Arduino shield, 0x19570215
 ,	{ 0x62df37, 116900,	0x19561113, 1*60000, "wsprtx", 0.0 }		// Breadboard
 ,	{ -1, 		0,		0X5555,		1*60000, "wspr-esp", 0.0 }				// Default
@@ -248,9 +242,9 @@ void make_slot_plan(bool setup)
 	{
 		wspr_slot_tx  [i]		= WSPR_TX_NONE;
 		wspr_slot_band[i]		= wspr_slot_band[0];
-		wspr_slot_freq[i][0]	= 0;
-		wspr_slot_freq[i][1]	= 0; //WSPR_TX_FREQ_0;
-		wspr_slot_freq[i][2]	= 0; //WSPR_TX_FREQ_1;
+		wspr_slot_freq[i][0]	= 0; //WSPR_TX_FREQ_0;
+		wspr_slot_freq[i][1]	= 0; //WSPR_TX_FREQ_1;
+		wspr_slot_freq[i][2]	= 0; //WSPR_TX_FREQ_2;
 
 	}
 
@@ -383,8 +377,7 @@ void setup()
 
 	PRINT_P("\n=== PE0FKO, TX WSPR temperature coded\n");
 	PRINTF_P ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
-	PRINTF_P ("=== Config: frequency %.6fMHz/%.6fMHz - " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", 
-			WSPR_TX_FREQ_0/1000000.0, WSPR_TX_FREQ_1/1000000.0, HAM_POWER);
+	PRINTF_P ("=== Config: " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", HAM_POWER);
 
 	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
 	display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
