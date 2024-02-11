@@ -25,6 +25,7 @@
 #define		VERSION		"V2.0"
 
 #define	LOC_PE0FKO
+//#define	LOC_PA3EQN
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
 //#define	LOC_LA_MOTHE_40m
@@ -60,14 +61,23 @@
 
 #if defined LOC_PE0FKO
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_20m
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_2m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
 	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
 	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
 //  #define	WIFI_SSID_01	"pe0fko_ziggo",	"<pwd>"
+#elif defined LOC_PA3EQN
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
+	#define	HAM_PREFIX      ""				// Prefix of the ham call
+	#define	HAM_CALL        "PA3EQN"        // Ham radio call sign
+	#define	HAM_SUFFIX      ""				// Suffix of the ham call
+	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
+	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
 #elif defined LOC_PA_PE0FKO
 	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_40m	// 40m   7.040000 -  7.040200
 	#define	HAM_PREFIX      "PA/"			// Prefix of the ham call
@@ -113,6 +123,7 @@
 #define	WSPR_TX_FREQ_10m		28126000UL	// 10m  28.126000 - 28.126200
 #define	WSPR_TX_FREQ_6m			50294400UL	// 6m   50.294400 - 50.294600
 #define	WSPR_TX_FREQ_2m			144489900UL	// 2m  144.489900 - 144.490100
+#define	WSPR_TX_FREQ_none		0UL			// No TX mode
 
 #define		MYTZ				TZ_Europe_Amsterdam	// TZ string for currect location
 #define		WSPR_SLOTS_MAX		30			// 30 times 2min slots in a hour
@@ -129,10 +140,10 @@
 #include <ESP8266WiFi.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>         // Adafruit GFX Library               1.11.5
-#include <Adafruit_SSD1306.h>     // Adafruit SSD1306 Wemos Mini OLED
-#include <si5351.h>               // Etherkit
-#include <JTEncode.h>             // Etherkit
+#include <Adafruit_GFX.h>			// Adafruit GFX Library               1.11.5
+#include <Adafruit_SSD1306.h>		// Adafruit SSD1306 Wemos Mini OLED
+#include <si5351.h>					// Etherkit
+#include <JTEncode.h>				// Etherkit
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #ifdef FEATURE_mDNS
@@ -210,18 +221,22 @@ const	int32_t      	wspr_sym_freq[4] =
 ,	( 3.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
 };
 
-static	struct {	int 	ChipId;
-					int 	FreqCorrection;
-					int 	RandomSeed;
-					int		DisplayAutoOff;
-					String	Hostname;
-					float	TempCorrection;			// Change at 18/08/2022
+static	struct {	int 	ChipId;					// ESP Chip ID
+					int 	FreqCorrection;			// Si5351 frequency correction
+					int 	RandomSeed;				// Daily pseudo random number, freq
+					int		DisplayAutoOff;			// Switch display off timeout
+					String	Hostname;				// mDNS & OTA hostname
+					float	TempCorrection;			// DS18B20 temp correction, at 18/08/2022
 				} ESPChipInfo[] 
 =
-{	{ 0x7b06f7, 13220,	0,			4*60000, "wsprtx-prod", -2.5 }	// Arduino shield, 0x19570215
-,	{ 0x62df37, 116900,	0x19561113, 1*60000, "wsprtx", 0.0 }		// Breadboard
-,	{ -1, 		0,		0X5555,		1*60000, "wspr-esp", 0.0 }				// Default
+{	{ 0x7b06f7, 13175,	0,			1*60000, "wsprtx", -2.5 }	// Arduino shield, 0x19570215
+,	{ 0x62df37, 116900,	0x19561113, 4*60000, "wsprtx-tst", 0.0 }		// Breadboard
+,	{ -1, 		0,		0X5555,		1*60000, "wsprtx-esp", 0.0 }				// Default
 };
+// Oud 13220 - 45 = 13175
+// 4Hz te hoog op 7.040MHz		0,568181818182 ppm
+// 6Hz te hoog op 14.097MHz		0,425622472867 ppm
+
 
 static		int		CHIP_FREQ_CORRECTION;
 static		int		CHIP_RANDOM_SEED;
@@ -237,14 +252,15 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2=NULL);
 void make_slot_plan(bool setup)
 {
     // Clean the old slot plan.
-	wspr_slot_band[0] = random(20, 180);	// All TX in the hour on the same band
+//	wspr_slot_band[0] = random(20, 180);	// All TX in the hour on the same band
 	for (int i = 0; i < WSPR_SLOTS_MAX; i++)
 	{
 		wspr_slot_tx  [i]		= WSPR_TX_NONE;
-		wspr_slot_band[i]		= wspr_slot_band[0];
-		wspr_slot_freq[i][0]	= 0; //WSPR_TX_FREQ_0;
-		wspr_slot_freq[i][1]	= 0; //WSPR_TX_FREQ_1;
-		wspr_slot_freq[i][2]	= 0; //WSPR_TX_FREQ_2;
+//		wspr_slot_band[i]		= wspr_slot_band[0];
+		wspr_slot_band[i]		= random(20, 180);
+		wspr_slot_freq[i][0]	= WSPR_TX_FREQ_0;
+		wspr_slot_freq[i][1]	= WSPR_TX_FREQ_1;
+		wspr_slot_freq[i][2]	= WSPR_TX_FREQ_2;
 
 	}
 
@@ -269,10 +285,11 @@ void make_slot_plan(bool setup)
 	// Even slot 40m, odd slot 20m
 	for (int i = 0; i < WSPR_SLOTS_MAX; i += 2)
 	{
-//		wspr_slot_band[i]		= 100;				// Test band midden
+//		wspr_slot_band[i]		= 150;				// Test band midden
+//		wspr_slot_band[i+1]		= 50;				// Test band midden
+
 		wspr_slot_tx  [i+0]		= WSPR_TX_TYPE_2;
 		wspr_slot_freq[i+0][0]	= WSPR_TX_FREQ_40m;
-//		wspr_slot_band[i+1]		= 100;				// Test band midden
 		wspr_slot_tx  [i+1]		= WSPR_TX_TYPE_2;
 		wspr_slot_freq[i+1][0]	= WSPR_TX_FREQ_20m;
 	}
@@ -415,6 +432,7 @@ void setup()
 	// Start OTA server.
 	ArduinoOTA.setHostname((const char *)HostName.c_str());
 	ArduinoOTA.onStart([]() { ssd1306_text(200, "Running", "OTA update"); });
+	ArduinoOTA.setPassword("123");
 	ArduinoOTA.begin();
 #endif
 
