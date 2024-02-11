@@ -60,53 +60,60 @@
 // Update JTEncode.cpp library at line 1000 for 1 char prefix!
 
 #if defined LOC_PE0FKO
-	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
 	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
 	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
 //  #define	WIFI_SSID_01	"pe0fko_ziggo",	"<pwd>"
-#elif defined LOC_PA3EQN
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
+#elif defined LOC_PA3EQN
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PA3EQN"        // Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
-	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
+	#define	HAM_LOCATOR     "JO32cc"		// JO32CD 40OJ
 	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 #elif defined LOC_PA_PE0FKO
-	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_40m	// 40m   7.040000 -  7.040200
 	#define	HAM_PREFIX      "PA/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
 	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
 	#define	HAM_POWER       10				// Power TX in dBm
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 #elif defined LOC_LA_MOTHE_40m
-	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_40m	// 40m   7.040000 -  7.040200
 	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
 	#define	HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
 	#define	HAM_POWER       10				// Power TX in dBm
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 #elif defined LOC_LA_MOTHE_30m
-	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_30m	// 30m  10.140100 - 10.140300
 	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
 	#define	HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
 	#define	HAM_POWER       5				// Power TX in dBm
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 #elif defined LOC_LA_MOTHE_20m
-	#define	WSPR_TX_FREQ	WSPR_TX_FREQ_20m	// 20m  14.097000 - 14.097200
 	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
 	#define	HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
 	#define	HAM_POWER       4				// Power TX in dBm
-
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 #else
   #error    "Specify the Location..."
 #endif
@@ -139,12 +146,12 @@
 #include <sntp.h>
 #include <ESP8266WiFi.h>
 #include <SPI.h>
-#include <Wire.h>
+#include <Wire.h>					// Used by Display
 #include <Adafruit_GFX.h>			// Adafruit GFX Library               1.11.5
 #include <Adafruit_SSD1306.h>		// Adafruit SSD1306 Wemos Mini OLED
 #include <si5351.h>					// Etherkit
 #include <JTEncode.h>				// Etherkit
-#include <OneWire.h>
+#include <OneWire.h>				// Used for Dallas temp sensor
 #include <DallasTemperature.h>
 #ifdef FEATURE_mDNS
 #include <ESP8266mDNS.h>
@@ -153,14 +160,10 @@
 #include <ArduinoOTA.h>
 #endif
 #ifdef FEATURE_WIFIMULTI
-#include <ESP8266WiFiMulti.h>   // Include the Wi-Fi-Multi library
+#include <ESP8266WiFiMulti.h>		// Include the Wi-Fi-Multi library
 ESP8266WiFiMulti wifiMulti;
 #endif
-#include "WiFi_SSID.h"
-
-#if (SSD1306_LCDHEIGHT != 64)
-#error("Height incorrect, please fix the file Adafruit_SSD1306.h, enable the SSD1306_128_64!");
-#endif
+#include "WiFi_SSID.h"				// WiFi SSID's from know networks
 
 #ifdef DEBUG_ESP_PORT
 // Put the strings in PROGMEM, slow but free some (constant) ram memory.
@@ -173,7 +176,16 @@ ESP8266WiFiMulti wifiMulti;
  #define PRINTF_P(...)		{ }
 #endif
 
-boolean						connectioWasAlive = true;	// ESP8266WiFiMulti
+#define	SCREEN_WIDTH	128			// OLED display width, in pixels
+#define	SCREEN_HEIGHT	64			// OLED display height, in pixels
+
+#ifndef SSD1306_128_64
+#error("Height incorrect, please fix the file Adafruit_SSD1306.h, enable the SSD1306_128_64!");
+#endif
+
+#define OLED_RESET     -1 	// Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C	///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32, WRORG
+//Adafruit_SSD1306			display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_SSD1306			display(-1);
 Si5351						si5351;
 JTEncode					wspr;
@@ -181,8 +193,8 @@ JTEncode					wspr;
 static 	WiFiEventHandler	wifiConnectHandler;			// WiFi connect event handler
 static	WiFiEventHandler	wifiDisconnectHandler;		// WiFi disconnect event handler
 static	String				HostName;
-static	OneWire				oneWire(ONE_WIRE_BUS);
-static	DallasTemperature	sensors(&oneWire);
+static	OneWire				oneWire(ONE_WIRE_BUS);		// Temp sensor
+static	DallasTemperature	sensors(&oneWire);			// Dallas DS18B20
 
 static	uint8_t				wifi_status_previous	= WL_DISCONNECTED;
 
@@ -397,7 +409,7 @@ void setup()
 	PRINTF_P ("=== Config: " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", HAM_POWER);
 
 	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
-	display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 //	display.setRotation(2);					// Display upside down...
 
 	pinMode(BUTTON_INPUT, INPUT_PULLUP);	// Button for display on/off
