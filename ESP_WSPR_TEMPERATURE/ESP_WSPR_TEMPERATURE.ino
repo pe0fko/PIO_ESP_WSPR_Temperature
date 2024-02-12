@@ -24,8 +24,8 @@
 
 #define		VERSION		"V2.0"
 
-#define	LOC_PE0FKO
-//#define	LOC_PA3EQN
+//#define	LOC_PE0FKO
+#define	LOC_PA3EQN
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
 //#define	LOC_LA_MOTHE_40m
@@ -73,7 +73,7 @@
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PA3EQN"        // Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
-	#define	HAM_LOCATOR     "JO32cc"		// JO32CD 40OJ
+	#define	HAM_LOCATOR     "JO32cc"		// JO32CC
 	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
@@ -305,6 +305,8 @@ void make_slot_plan(bool setup)
 		wspr_slot_tx  [i+1]		= WSPR_TX_TYPE_2;
 		wspr_slot_freq[i+1][0]	= WSPR_TX_FREQ_20m;
 	}
+	
+	wspr_slot_tx  [4]		= WSPR_TX_TYPE_3;
 
 #elif 0
 
@@ -465,8 +467,8 @@ void setup()
 
 	timer_20ms_loop = millis();
 
-//#ifdef FEATURE_CARRIER
-#if 1
+#ifdef FEATURE_CARRIER
+//#if 1
 	si5351.set_freq( SI5351_FREQ_MULT * 7040100, SI5351_CLK0 );
 	wspr_tx_enable(SI5351_CLK0);
 
