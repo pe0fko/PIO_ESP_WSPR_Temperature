@@ -24,8 +24,8 @@
 
 #define		VERSION		"V2.0"
 
-//#define	LOC_PE0FKO
-#define	LOC_PA3EQN
+#define	LOC_PE0FKO
+//#define	LOC_PA3EQN
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
 //#define	LOC_LA_MOTHE_40m
@@ -65,10 +65,9 @@
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
 	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
 	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
-//  #define	WIFI_SSID_01	"pe0fko_ziggo",	"<pwd>"
-	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m	// TX freqency Si5351 OSC 0
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 1
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 2
 #elif defined LOC_PA3EQN
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PA3EQN"        // Ham radio call sign
@@ -145,13 +144,10 @@
 #include <TZ.h>
 #include <sntp.h>
 #include <ESP8266WiFi.h>
-#include <SPI.h>
-#include <Wire.h>					// Used by Display
 #include <Adafruit_GFX.h>			// Adafruit GFX Library               1.11.5
 #include <Adafruit_SSD1306.h>		// Adafruit SSD1306 Wemos Mini OLED
 #include <si5351.h>					// Etherkit
 #include <JTEncode.h>				// Etherkit
-#include <OneWire.h>				// Used for Dallas temp sensor
 #include <DallasTemperature.h>
 #ifdef FEATURE_mDNS
 #include <ESP8266mDNS.h>
@@ -179,14 +175,9 @@ ESP8266WiFiMulti wifiMulti;
 #define	SCREEN_WIDTH	128			// OLED display width, in pixels
 #define	SCREEN_HEIGHT	64			// OLED display height, in pixels
 
-#ifndef SSD1306_128_64
-#error("Height incorrect, please fix the file Adafruit_SSD1306.h, enable the SSD1306_128_64!");
-#endif
-
 #define OLED_RESET     -1 	// Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C	///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32, WRORG
-//Adafruit_SSD1306			display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-Adafruit_SSD1306			display(-1);
+Adafruit_SSD1306			display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Si5351						si5351;
 JTEncode					wspr;
 
@@ -241,14 +232,10 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 					float	TempCorrection;			// DS18B20 temp correction, at 18/08/2022
 				} ESPChipInfo[] 
 =
-{	{ 0x7b06f7, 13175,	0,			1*60000, "wsprtx", -2.5 }	// Arduino shield, 0x19570215
-,	{ 0x62df37, 116900,	0x19561113, 4*60000, "wsprtx-tst", 0.0 }		// Breadboard
-,	{ -1, 		0,		0X5555,		1*60000, "wsprtx-esp", 0.0 }				// Default
+{	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "wsprtx", 		-2.5 }	// Arduino shield, 0x19570215
+,	{ 0x62df37, 116860,	0x19561113, 1*60000, "wsprtx-tst", 	0.0 }	// Breadboard
+,	{ -1, 		0,		0X5555,		1*60000, "wsprtx-esp", 	0.0 }	// Default
 };
-// Oud 13220 - 45 = 13175
-// 4Hz te hoog op 7.040MHz		0,568181818182 ppm
-// 6Hz te hoog op 14.097MHz		0,425622472867 ppm
-
 
 static		int		CHIP_FREQ_CORRECTION;
 static		int		CHIP_RANDOM_SEED;
@@ -263,17 +250,15 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2=NULL);
 //
 void make_slot_plan(bool setup)
 {
-    // Clean the old slot plan.
-//	wspr_slot_band[0] = random(20, 180);	// All TX in the hour on the same band
+	int rnd0 = random(20, 180);				// All TX in the hour on the same band
 	for (int i = 0; i < WSPR_SLOTS_MAX; i++)
 	{
 		wspr_slot_tx  [i]		= WSPR_TX_NONE;
-//		wspr_slot_band[i]		= wspr_slot_band[0];
-		wspr_slot_band[i]		= random(20, 180);
+		wspr_slot_band[i]		= rnd0;
+//		wspr_slot_band[i]		= random(20, 180);
 		wspr_slot_freq[i][0]	= WSPR_TX_FREQ_0;
 		wspr_slot_freq[i][1]	= WSPR_TX_FREQ_1;
 		wspr_slot_freq[i][2]	= WSPR_TX_FREQ_2;
-
 	}
 
 #ifdef FEATURE_1H_FAST_TX
@@ -291,44 +276,32 @@ void make_slot_plan(bool setup)
 		}
 	}
 	else
+#endif
 
-#elif 1
-
-	// Even slot 40m, odd slot 20m
-	for (int i = 0; i < WSPR_SLOTS_MAX; i += 2)
+#if 1
 	{
-//		wspr_slot_band[i]		= 150;				// Test band midden
-//		wspr_slot_band[i+1]		= 50;				// Test band midden
+		// Even slot 40m, PA3EDR testing.
+		int bnd = 25;					// Use audio band 25--175 Hz
+		for (int i = 0; i < WSPR_SLOTS_MAX; 
+				i += 1)
+//				i += 2)
+		{
+			wspr_slot_band[i]		= bnd;
+			bnd += 5;
+			if (bnd >= 175) bnd = 25; 	// Step size if 5 Hz
+			wspr_slot_tx  [i]		= WSPR_TX_TYPE_2;
+			wspr_slot_freq[i][0]	= i & 1 ? WSPR_TX_FREQ_20m : WSPR_TX_FREQ_40m;
+		}
 
-		wspr_slot_tx  [i+0]		= WSPR_TX_TYPE_2;
-		wspr_slot_freq[i+0][0]	= WSPR_TX_FREQ_40m;
-		wspr_slot_tx  [i+1]		= WSPR_TX_TYPE_2;
-		wspr_slot_freq[i+1][0]	= WSPR_TX_FREQ_20m;
+		// TX ones avery hour the 6 char QTH locator.	
+		wspr_slot_tx  [2]			= WSPR_TX_TYPE_3;
 	}
-	
-	wspr_slot_tx  [4]		= WSPR_TX_TYPE_3;
-
-#elif 0
-
-	// Every even slot a TX until the first hour.
-	for (int i = 0; i < WSPR_SLOTS_MAX; i += 1)
-	{
-		wspr_slot_tx  [i]    = WSPR_TX_TYPE_2;
-// Kan niet alleen CLK0 op freq 0 zetten!!!!!!!!!!!!!
-		wspr_slot_freq[i][0] = i % 3 == 0 ? WSPR_TX_FREQ_2m : 0;
-		wspr_slot_freq[i][1] = WSPR_TX_FREQ_0;
-		wspr_slot_freq[i][2] = WSPR_TX_FREQ_1;
-	}
-
 #elif 1
 	{
 		int   s0,s1,s2,s3,t;
 		float tf;
 
 		ReadTemperature();
-//		sensors.requestTemperatures();
-//		tf = sensors.getTempCByIndex(0) + CHIP_TEMP_CORRECTION;
-//		PRINTF_P("Slot Temperature %.1fºC\n", tf);
 
 		//Convert temperature to integer value
 		// >-20 ... <50 ==> 0 ... 70 ==> *10 = 0 ... 700
@@ -338,12 +311,12 @@ void make_slot_plan(bool setup)
 		tf *= 10;								//== Decimal steps
 		t = (int)(tf + 0.5);					// Rounding
 
-		s1 =  0 + t / 100;	t %= 100;	// 0-6 :  0 .. 12 min
-		s2 = 10 + t /  10;	t %= 10;	// 0-9 : 20 .. 38 min
-		s3 = 20 + t /   1;				// 0-9 : 40 .. 58 min
-		s0 = s1 + 1;					// After first digit tx
+		s1 =  0 + t / 100;	t %= 100;			// 0-6 :  0 .. 12 min
+		s2 = 10 + t /  10;	t %= 10;			// 0-9 : 20 .. 38 min
+		s3 = 20 + t /   1;						// 0-9 : 40 .. 58 min
+		s0 = s1 + 1;							// After first digit tx
 
-		PRINTF_P("TX Slots min: (%d), [%d, %d, %d]\n", s0 * 2, s1 * 2, s2 * 2, s3 * 2);
+		PRINTF_P("TX Slots min: L[%d], #[%d, %d, %d]\n", s0 * 2, s1 * 2, s2 * 2, s3 * 2);
 
 		wspr_slot_tx[s0]	= WSPR_TX_TYPE_3;	// TX locator 6
 		wspr_slot_tx[s1]	= WSPR_TX_TYPE_2;	// Comp, no locator
@@ -415,8 +388,7 @@ void setup()
 //	display.setRotation(2);					// Display upside down...
 
 	pinMode(BUTTON_INPUT, INPUT_PULLUP);	// Button for display on/off
-	timer_display_auto_off = millis();		// Start the display ON timer
-	display_status  = DISPLAY_ON;
+	ssd1306_display_on();					// Start the display ON timer
 
 	pinMode(LED_BUILTIN, OUTPUT);			// BuildIn LED
 
@@ -445,7 +417,8 @@ void setup()
 #ifdef FEATURE_OTA
 	// Start OTA server.
 	ArduinoOTA.setHostname((const char *)HostName.c_str());
-	ArduinoOTA.onStart([]() { ssd1306_text(200, "Running", "OTA update"); });
+	ArduinoOTA.onStart([]() { ssd1306_text(200,  "Running", "OTA update"); });
+	ArduinoOTA.onEnd([]()   { ssd1306_text(2000, "Reboot",  "OTA update"); ESP.restart(); });
 	ArduinoOTA.setPassword("123");
 	ArduinoOTA.begin();
 #endif
@@ -550,6 +523,55 @@ void time_is_set (bool from_sntp)
 }
 
 
+#if 0
+//---------------------------------------------------------------------------------
+//---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
+//---- LPF after SI5351 testing
+//---------------------------------------------------------------------------------
+void loop()
+{
+	#ifdef FEATURE_OTA
+	ArduinoOTA.handle();
+	#endif
+
+	#ifdef FEATURE_mDNS
+	MDNS.update();
+	#endif
+
+	#ifdef FEATURE_WIFIMULTI
+	wifiMulti.run(4000);
+	#endif
+
+////////////////////////////////////////////////////////////////
+
+	static bool init = false;
+	if (!init)
+	{
+		init = true;
+		si5351.drive_strength(SI5351_CLK0, SI5351_DRIVE_8MA);
+		si5351.set_clock_pwr(SI5351_CLK0, 1);
+		si5351.output_enable(SI5351_CLK0, 1);
+	}
+
+	// 2 MHz ... 100MHz
+	// 98M / 100sec = 980 KHz
+
+	static int count = 0;
+	
+	uint64_t frequency = SI5351_FREQ_MULT * ( 2e6 + 980e3 * count );
+
+	if (si5351.set_freq( frequency, SI5351_CLK0 ) )
+		PRINTF_P("ERROR: tx_freq(%d) / SI5351::set_freq(...)\n", SI5351_CLK0);
+
+	count++;
+	if (count >= 100)
+		count = 0;
+
+	delay(100);
+////////////////////////////////////////////////////////////////
+}
+#else
+
 //---------------------------------------------------------------------------------
 //---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
 //---------------------------------------------------------------------------------
@@ -596,7 +618,8 @@ void loop()
 	wifiMulti.run(4000);
 	#endif
 
-	if (display_status == DISPLAY_ON && ((millis() - timer_display_auto_off) >= value_display_auto_off))
+	if (display_status == DISPLAY_ON 
+	&& ((millis() - timer_display_auto_off) >= value_display_auto_off))
 			ssd1306_display_off();
 
 	// Show WiFi status change on the oled display.
@@ -655,7 +678,7 @@ return;
 
 	//++ 50Hz code lus
 	// Used for slower processing, timing from the cpu xtal
-	if ((millis() - timer_20ms_loop) >= value_20ms_loop)    		// Every 20ms...
+	if ((millis() - timer_20ms_loop) >= value_20ms_loop)	// Every 20ms...
 	{
 		timer_20ms_loop += value_20ms_loop;
 
@@ -664,8 +687,8 @@ return;
 static 	int8_t 		last_sec	= -1;
 
 		// Check if button is pressed to lightup the display
-		int switchStatus = digitalRead(BUTTON_INPUT);				// read status of switch
-		if (switchStatus != switchStatusLast)						// if status of button has changed
+		int switchStatus = digitalRead(BUTTON_INPUT);		// read status of switch
+		if (switchStatus != switchStatusLast)				// if status of button has changed
 		{
 			  switchStatusLast = switchStatus;
 			  if (switchStatus == LOW)
@@ -674,14 +697,15 @@ static 	int8_t 		last_sec	= -1;
 
 				if (display_status == DISPLAY_ON)
 				{
-					timer_display_auto_off = millis();  	// Start the display ON timer
+					ssd1306_display_on();				  	// Start the display ON timer
 					digitalWrite(LED_BUILTIN, HIGH);		// Switch the ESP LED off
+					ReadTemperature();						// Get temperature
 				}
 				else
-				{
 					ssd1306_display_off();
-				}
+
 				last_sec = -1;								// Fast update of the display
+
 				PRINTF_P("Button pressed, display_status=%d\n", display_status);
 			  }
 		}
@@ -695,7 +719,6 @@ static 	int8_t 		last_sec	= -1;
 			delay(3);
 			digitalWrite(LED_BUILTIN, HIGH);
 		}
-
 
 		//++ Updates for every second
 		//
@@ -738,18 +761,15 @@ static 	int8_t 		last_sec	= -1;
 				randomSeed(CHIP_RANDOM_SEED);
 			}
 
-			//
-			//++ At avery 8 minute interval, at second 16, print the temperature
-			// No wspr TX at > 51+60sec 
-//			if (now % 120*4 == 113)
-			if (now % 120 == 113)
-			{
-				ReadTemperature();
-				PRINT_P("Time now: ");	PRINT(ctime(&now));
-			}
-
 			if (display_status == DISPLAY_ON)
+			{
+				//++ At every 2 minute interval, at second 113, print the temperature
+				if (now % 120 == 113) {
+					ReadTemperature();
+					PRINT_P("Time now: ");	PRINT(ctime(&now));
+				}
 				ssd1306_main_window(now);
+			}
 
 			s = millis() - s;
 			if (s > 150)	// 147ms
@@ -759,6 +779,7 @@ static 	int8_t 		last_sec	= -1;
 	}   		// 50Hz code lus
 }
 
+#endif
 
 static void init_si5351()
 {
@@ -858,6 +879,7 @@ void wspr_tx_enable(si5351_clock clk)
 				clk, wspr_slot, 
 				wspr_slot_freq[wspr_slot][clk] / 1000000.0, 
 				wspr_slot_band[wspr_slot]);
+
 		si5351.drive_strength(clk, SI5351_DRIVE_8MA); // 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
 		si5351.set_clock_pwr(clk, 1);
 		si5351.output_enable(clk, 1);
@@ -913,16 +935,18 @@ void ssd1306_main_window(time_t now)
 	{
 		// Calculate the next tx time and slot
 		uint16_t w = 120 - (now % 120);
-		while (wspr_slot_tx[ns++] == WSPR_TX_NONE) {
+		while (wspr_slot_tx[ns++] == WSPR_TX_NONE) 
+		{
 			if (ns >= WSPR_SLOTS_MAX) ns = 0;
 			w += 120;
 		}
-		if (w > 3600) return;		// Bailout if no next tx
-
-		// Display time next tx
-		sprintf(buffer, "TX %02d:%02d", w/60, w%60);
-		display.setCursor(14, display.height()-20);
-		display.print(buffer);
+		if (w < 3600) 
+		{
+			// Display time next tx
+			sprintf(buffer, "TX %02d:%02d", w/60, w%60);
+			display.setCursor(14, display.height()-20);
+			display.print(buffer);
+		}
 
 		// The actual temperature used
 		sprintf(buffer, "%.1f", temperature_now);
@@ -934,7 +958,7 @@ void ssd1306_main_window(time_t now)
 		display.invertDisplay(false);
 	}
 
-	// Display the used bands
+	// Display the used freq bands
 	sprintf(buffer, "%s/%s/%s"
 			, wspr_slot_freq[ns][0] == 0 ? "x" : String(300/(wspr_slot_freq[ns][0]/1000000)).c_str()
 			, wspr_slot_freq[ns][1] == 0 ? "x" : String(300/(wspr_slot_freq[ns][1]/1000000)).c_str()
@@ -972,6 +996,13 @@ void ssd1306_background()
 	display.fillRect(x, y, w, h, BLACK);
 	display.setCursor(x, y);
 	display.print(buf_count);
+}
+
+void ssd1306_display_on()
+{
+	PRINTF_P("Display On for %dsec.\n", value_display_auto_off/1000);
+	timer_display_auto_off = millis();		// Start the display ON timer
+	display_status  = DISPLAY_ON;
 }
 
 void ssd1306_display_off()
@@ -1017,16 +1048,13 @@ void ssd1306_text(uint8_t delay_ms, const char* txt1, const char* txt2)
 		display.print(ssid);
 	}
 
+	ssd1306_display_on();
 	display.display();
 
-//	PRINTF_P("ssd1306_text: %s / %s\n", txt1, txt2);
 	PRINTF_P("ssd1306_text[%d]: ", delay_ms);
 	if (txt1 != NULL)	PRINT(txt1);
 	if (txt2 != NULL) {	PRINT_P(" / "); PRINT(txt2); }
 	PRINT_P("\n");
-
-	timer_display_auto_off = millis();					// Start the display ON timer
-	display_status = DISPLAY_ON;
 
 	if (delay_ms >= 0)
 		delay(delay_ms);
@@ -1051,10 +1079,8 @@ void ssd1306_wifi_page()
 	display.setCursor(6, 16+10*2);
  	display.printf("RSSI:%d", WiFi.RSSI());
 
+	ssd1306_display_on();
 	display.display();
-
-	timer_display_auto_off = millis();					// Start the display ON timer
-	display_status = DISPLAY_ON;
 
 	delay(2000);
 }
