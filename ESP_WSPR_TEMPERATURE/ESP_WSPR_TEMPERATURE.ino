@@ -22,13 +22,13 @@
 // Using library ArduinoOTA at version 1.0
 //
 
-#define		VERSION		"V2.0"
+#define		VERSION		"V3.0"
 
-#define	LOC_PE0FKO
+//#define	LOC_PE0FKO
 //#define	LOC_PA3EQN
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
-//#define	LOC_LA_MOTHE_40m
+#define	LOC_LA_MOTHE_40m
 //#define	LOC_LA_MOTHE_30m
 //#define	LOC_LA_MOTHE_20m
 
@@ -191,20 +191,21 @@ static	uint8_t				wifi_status_previous	= WL_DISCONNECTED;
 
 //static esp8266::polledTimeout::periodicMs showTimeNow(60000);  // Checkout
 
-const   uint32_t		value_20ms_loop			= 20;   			// 20ms interval check time ntp sec
-static  uint32_t		timer_20ms_loop;
-const	float			value_wspr_bit_ms_incr	= 8192.0/12000.0*1000.0; // Delay value for WSPR, 682.66666 ms
-static	float			value_wspr_bit_ms_float;
-static	uint32_t		value_wspr_bit_ms;							// Delay value for WSPR
-static	uint32_t		timer_wspr_bit_ms;
-static	uint32_t		value_display_auto_off;						// Display on time, load per chip
-static	uint32_t		timer_display_auto_off;
-const	uint32_t		value_ntp_faild_reboot	= 3600 * 1000;		// 1 hour (ntp must be updated in this time)
-static	uint32_t		timer_ntp_faild_reboot;
-const	uint32_t		sntp_update_delay		= 30 * 60000;		// NTP update every 30min
-volatile bool			ntp_time_sync;
+const   uint32_t		value_ms_20ms_loop		= 20;			// 20ms interval check time ntp sec
+static  uint32_t		timer_ms_20ms_loop		= 0;
+const	uint32_t		value_us_wspr_bit		= 8192.0 / 12000.0 * 1000000.0;							// Delay value for WSPR
+static	uint32_t		timer_us_wspr_bit		= 0;
+const	uint32_t		value_us_one_second		= 1000000UL;	// micro second (us)
+static	uint32_t		timer_us_one_second		= 0;			// micros()
+static	uint32_t		value_ms_display_auto_off;				// Display on time, load per chip
+static	uint32_t		timer_ms_display_auto_off;
+const	uint32_t		value_ms_ntp_faild_reboot= 3600 * 1000;	// 1 hour (ntp must be updated in this time)
+static	uint32_t		timer_ms_ntp_faild_reboot;
+
+const	uint32_t		sntp_update_delay		= 3600*1000UL;	// NTP update every 1h
+volatile bool			ntp_time_sync			= false;
 static	float			temperature_now			= 0.0;
-static  uint8_t			switchStatusLast		= HIGH;				// last status hardware switch
+static  uint8_t			switchStatusLast		= HIGH;			// last status hardware switch
 static	enum { DISPLAY_OFF,	DISPLAY_ON } display_status;
 
 static	uint8_t			wspr_symbols[WSPR_SYMBOL_COUNT];
@@ -233,7 +234,7 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 				} ESPChipInfo[] 
 =
 {	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "wsprtx", 		-2.5 }	// Arduino shield, 0x19570215
-,	{ 0x62df37, 116860,	0x19561113, 1*60000, "wsprtx-tst", 	0.0 }	// Breadboard
+,	{ 0x62df37, 116860,	0x19561113, 10*60000, "wsprtx-tst", 	0.0 }	// Breadboard
 ,	{ -1, 		0,		0X5555,		1*60000, "wsprtx-esp", 	0.0 }	// Default
 };
 
@@ -255,7 +256,6 @@ void make_slot_plan(bool setup)
 	{
 		wspr_slot_tx  [i]		= WSPR_TX_NONE;
 		wspr_slot_band[i]		= rnd0;
-//		wspr_slot_band[i]		= random(20, 180);
 		wspr_slot_freq[i][0]	= WSPR_TX_FREQ_0;
 		wspr_slot_freq[i][1]	= WSPR_TX_FREQ_1;
 		wspr_slot_freq[i][2]	= WSPR_TX_FREQ_2;
@@ -278,7 +278,24 @@ void make_slot_plan(bool setup)
 	else
 #endif
 
-#if 1
+#if 0
+	{	// 40m & 10m
+		int bnd = 25;					// Use audio band 25--175 Hz
+		for (int i = 0; i < WSPR_SLOTS_MAX; 
+				i += 1)
+//				i += 2)
+		{
+			wspr_slot_band[i]		= bnd;
+			bnd += 5;
+			if (bnd >= 175) bnd = 25; 	// Step size if 5 Hz
+			wspr_slot_tx  [i]		= WSPR_TX_TYPE_2;
+			wspr_slot_freq[i][0]	= i & 1 ? WSPR_TX_FREQ_10m : WSPR_TX_FREQ_40m;
+		}
+
+		// TX ones avery hour the 6 char QTH locator.	
+		wspr_slot_tx  [2]			= WSPR_TX_TYPE_3;
+	}
+#elif 1
 	{
 		// Even slot 40m, PA3EDR testing.
 		int bnd = 25;					// Use audio band 25--175 Hz
@@ -305,9 +322,9 @@ void make_slot_plan(bool setup)
 
 		//Convert temperature to integer value
 		// >-20 ... <50 ==> 0 ... 70 ==> *10 = 0 ... 700
-		tf += 20.0;								//== Negative start offset
+		tf = temperature_now + 20.0;			//== Negative start offset
 		if (tf < 0.0) tf = 0.0;
-		if (tf > (70.0-0.1)) tf = 70.0-0.1;
+		if (tf >= 70.0) tf = 70.0 - 0.1;
 		tf *= 10;								//== Decimal steps
 		t = (int)(tf + 0.5);					// Rounding
 
@@ -345,16 +362,6 @@ uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 //---------------------------------------------------------------------------------
 void setup()
 {
-//	WiFi.mode(WIFI_OFF);				// Start WiFi later
-	// Always check the near AP with WiFiMulti
-	WiFi.persistent(false);				// Don't save WiFi configuration in flash
-//	WiFi.persistent(true);				// Save WiFi configuration in flash
-// true: WiFi mode configuration will be retained through power cycle. (Default)
-// false: WiFi mode configuration will not be retained through power cycle.
-//	WiFi.setmode(WIFI_OFF, false);				// Start WiFi later
-//	WiFii.mode(WIFI_OFF, false);				// Start WiFi later
-//	yield();
-
 	// Find the ESP chip-id specific data.
 	int i = 0, chipid = ESP.getChipId();
 	while(true)
@@ -368,7 +375,7 @@ void setup()
 		i++;
 	}
 	randomSeed(CHIP_RANDOM_SEED);
-	value_display_auto_off = CHIP_DISPLAY_AUTO_OFF;
+	value_ms_display_auto_off = CHIP_DISPLAY_AUTO_OFF;
 	HostName = CHIP_HOSTNAME;
 
 	Serial.begin(115200);				// 115200
@@ -383,6 +390,12 @@ void setup()
 	PRINTF_P ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
 	PRINTF_P ("=== Config: " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", HAM_POWER);
 
+	PRINTF_P("Sizeof int      : %d\n", sizeof(int));
+	PRINTF_P("Sizeof long     : %d\n", sizeof(long));
+	PRINTF_P("Sizeof long long: %d\n", sizeof(long long));
+
+	PRINTF_P("value_us_wspr_bit: %ld\n", value_us_wspr_bit);
+
 	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 //	display.setRotation(2);					// Display upside down...
@@ -392,13 +405,14 @@ void setup()
 
 	pinMode(LED_BUILTIN, OUTPUT);			// BuildIn LED
 
-    // Set Hostname.
-	WiFi.hostname(HostName);
 	ssd1306_text(1000, "Hostname", HostName.c_str());
 
-	WiFi.mode(WIFI_STA);				// Set WiFi to station mode
-//	WiFi.setAutoReconnect(true);		// Keep WiFi connected
-	// Register FiFi event handlers
+	// WiFi settings
+	WiFi.mode(WIFI_STA);					// Set WiFi to station mode
+	WiFi.hostname(HostName);				// Set Hostname.
+	WiFi.setAutoReconnect(true);			// Keep WiFi connected
+											// Register WiFi event handlers
+//	WiFi.onEvent(onWifiEvent);
 	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
 	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
 
@@ -423,8 +437,6 @@ void setup()
 	ArduinoOTA.begin();
 #endif
 
-	init_sntp_now();					// Init the sNTP client to get the real time
-
 	sensors.begin();					// Init the onewire for the DS18B20 temp sensor
 	ReadTemperature();					// Read the Dallas temperature one-wire sensor
 
@@ -432,13 +444,12 @@ void setup()
 
 	make_slot_plan(true);				// The first hour slot plan definition
 
-	time_t now = time(nullptr);			// get UNIX timestamp
-	PRINT(ctime(&now));					// convert timestamp and display
+	struct timeval	tv;
+	gettimeofday(&tv, NULL);			// Get the current time in usec
+	PRINT(ctime(&tv.tv_sec));			// convert timestamp and display
 
 	pinMode(LED_BUILTIN, OUTPUT);		// LED on the ESP
 	digitalWrite(LED_BUILTIN, HIGH);	// High is off!
-
-	timer_20ms_loop = millis();
 
 #ifdef FEATURE_CARRIER
 //#if 1
@@ -459,8 +470,6 @@ void setup()
 	PRINT_P("=== Start looping...\n");
 }
 
-
-
 void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo)
 {
 	PRINTF_P("WiFi connected: IP:%s/%s GW:%s\n",
@@ -468,12 +477,32 @@ void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo)
 		ipInfo.mask.toString().c_str(),
 		ipInfo.gw.toString().c_str()
 		);
+
+	settimeofday_cb(sntp_time_is_set);			// Call-back function
+	configTime(MYTZ, "time.google.com","nl.pool.ntp.org");
+
+	sntp_init();
+
+	ntp_time_sync = false;
+
+	timer_ms_ntp_faild_reboot = millis();
 }
+
+// callback routine - arrive here whenever a successful NTP update has occurred
+void sntp_time_is_set(bool from_sntp)
+{
+	time_t now = time(nullptr);          // get UNIX timestamp
+	PRINT_P("NTP update done at: ");
+	PRINT(ctime(&now));
+
+	ntp_time_sync = true;
+}
+
 
 void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 {
-//	Crash by multiple display update!
-//	ssd1306_text(200, "WiFi", "Disconnect");
+	sntp_stop();
+//	timer_ms_ntp_faild_reboot = millis();
 
 	PRINTF_P("WiFi disconnected from SSID: %s, Reason: %d\n",
   		disconnectInfo.ssid.c_str(),
@@ -486,7 +515,7 @@ void ReadTemperature()
 	sensors.requestTemperatures();
 	temperature_now = sensors.getTempCByIndex(0) + CHIP_TEMP_CORRECTION;
 
-	PRINTF_P("Sensor DS18B20 temperature %.1fºC\n", temperature_now);
+//	PRINTF_P("Sensor DS18B20 temperature %.1fºC\n", temperature_now);
 }
 
 #ifdef FEATURE_mDNS
@@ -500,111 +529,14 @@ static void init_mdns()
 }
 #endif
 
-void init_sntp_now()
-{
-	ntp_time_sync = false;
-//	sntp_stop();
-	settimeofday_cb(time_is_set);			// Call-back function
-	// Set the TZ and NTP servers to check.
-	configTime(MYTZ, "time.google.com","nl.pool.ntp.org");
-	sntp_init();
-
-	timer_ntp_faild_reboot = millis();
-}
-
-// callback routine - arrive here whenever a successful NTP update has occurred
-void time_is_set (bool from_sntp)
-{
-	time_t now = time(nullptr);          // get UNIX timestamp
-	PRINT_P("NTP update done at: ");
-	PRINT(ctime(&now));
-	ntp_time_sync = true;
-//	timer_ntp_faild_reboot = millis();
-}
-
-
-#if 0
-//---------------------------------------------------------------------------------
-//---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
-//---- LPF after SI5351 testing
-//---------------------------------------------------------------------------------
-void loop()
-{
-	#ifdef FEATURE_OTA
-	ArduinoOTA.handle();
-	#endif
-
-	#ifdef FEATURE_mDNS
-	MDNS.update();
-	#endif
-
-	#ifdef FEATURE_WIFIMULTI
-	wifiMulti.run(4000);
-	#endif
-
-////////////////////////////////////////////////////////////////
-
-	static bool init = false;
-	if (!init)
-	{
-		init = true;
-		si5351.drive_strength(SI5351_CLK0, SI5351_DRIVE_8MA);
-		si5351.set_clock_pwr(SI5351_CLK0, 1);
-		si5351.output_enable(SI5351_CLK0, 1);
-	}
-
-	// 2 MHz ... 100MHz
-	// 98M / 100sec = 980 KHz
-
-	static int count = 0;
-	
-	uint64_t frequency = SI5351_FREQ_MULT * ( 2e6 + 980e3 * count );
-
-	if (si5351.set_freq( frequency, SI5351_CLK0 ) )
-		PRINTF_P("ERROR: tx_freq(%d) / SI5351::set_freq(...)\n", SI5351_CLK0);
-
-	count++;
-	if (count >= 100)
-		count = 0;
-
-	delay(100);
-////////////////////////////////////////////////////////////////
-}
-#else
-
 //---------------------------------------------------------------------------------
 //---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
 //---------------------------------------------------------------------------------
 void loop()
 {
-#if 0
-	// Send the WSPR bits into the air if active TX!
-	// When started it will wait for the bit time and start a next bit.
-	if (wspr_symbol_index != 0 && (millis() - timer_wspr_bit_ms) >= value_wspr_bit_ms)
-	{
-		value_wspr_bit_ms_float += value_wspr_bit_ms_incr;	// Increment the float ms counter (exact counting)
-		value_wspr_bit_ms = value_wspr_bit_ms_float + 0.5;	//   copy and round to uint32_t
-
-		wspr_tx_bit();										// Ok, transmit the net tone bit
-	}
-#else
-	// Send the WSPR bits into the air if active TX!
-	// When started it will wait for the bit time and start a next bit.
-	if (wspr_symbol_index != 0)
-	{
-		int32_t ms = (millis() - timer_wspr_bit_ms) - value_wspr_bit_ms;
-		if (ms >= 0)
-		{
-			wspr_tx_bit();				// Ok, transmit the next tone bit
-
-			value_wspr_bit_ms_float += value_wspr_bit_ms_incr;	// Increment the float ms counter (exact counting)
-			value_wspr_bit_ms = value_wspr_bit_ms_float + 0.5;	//   copy and round to uint32_t
-	
-			if (ms > 7)
-				PRINTF_P("Overrun bit %3d: %3d ms\n", wspr_symbol_index, ms);
-		}
-	}
-#endif
+	loop_wspr_tx();
+	loop_1s_tick();
+	loop_20ms_tick();
 
 	#ifdef FEATURE_OTA
 	ArduinoOTA.handle();
@@ -614,14 +546,12 @@ void loop()
 	MDNS.update();
 	#endif
 
+//TODO: Ony at no TX!
 	#ifdef FEATURE_WIFIMULTI
 	wifiMulti.run(4000);
 	#endif
 
-	if (display_status == DISPLAY_ON 
-	&& ((millis() - timer_display_auto_off) >= value_display_auto_off))
-			ssd1306_display_off();
-
+/*
 	// Show WiFi status change on the oled display.
 	if (wifi_status_previous != WiFi.status())
 	{
@@ -640,14 +570,12 @@ void loop()
 									break;
 		}
 	}
-
-	if (wifi_status_previous != WL_CONNECTED)
-		return;		// Return the loop!!
+*/
 
 	// Wait for the NTP time service is known!
 	if (!ntp_time_sync)
 	{
-		if ((millis() - timer_ntp_faild_reboot) >= value_ntp_faild_reboot)
+		if ((millis() - timer_ms_ntp_faild_reboot) >= value_ms_ntp_faild_reboot)
 		{
 			ssd1306_text(2000, "REBOOT", "NTP sync...");
 			PRINT_P("REBOOT: No NTP time received.\n");
@@ -657,13 +585,9 @@ void loop()
 
 // Maak langere loops met timer
 
-		ssd1306_text(500, "Waiting", "NTP sync");
+//		ssd1306_text(500, "Waiting", "NTP sync");
 		return;		// Return the loop!!
 	}
-
-	// ----------------------------------------
-	// Now we have WiFi running,
-	//  and a valid time from the NTP servers!
 
 #if 0
 	// No need for WiFi until the next NTP request.
@@ -675,16 +599,69 @@ void loop()
 return;
 
 #endif
+}
 
-	//++ 50Hz code lus
-	// Used for slower processing, timing from the cpu xtal
-	if ((millis() - timer_20ms_loop) >= value_20ms_loop)	// Every 20ms...
+void loop_wspr_tx()
+{
+	// Send the WSPR bits into the air if active TX!
+	// When started it will wait for the bit time and start a next bit.
+	if ((wspr_symbol_index != 0) 
+	&&  (micros() - timer_us_wspr_bit) >= value_us_wspr_bit)
 	{
-		timer_20ms_loop += value_20ms_loop;
+		timer_us_wspr_bit += value_us_wspr_bit;
+		wspr_tx_bit();										// Ok, transmit the net tone bit
+	}
+}
+
+// Secure one second function call
+void loop_1s_tick() 
+{
+	if ((micros() - timer_us_one_second) >= value_us_one_second)
+	{
+		if (timer_us_one_second == 0)			// Initialize the timer only ones!
+			timer_us_one_second = micros();
+
+		struct timeval tv;
+		gettimeofday(&tv, NULL);			// Get the current time in usec
+	
+		if (tv.tv_usec > 500000UL)			// Half sec, wait for sec end
+		{
+			timer_us_one_second +=				// Set the (usec=1000000) timer for one second clock
+				1000000UL - tv.tv_usec;			
+		}
+		else
+		{
+			// On time or to late, both run the sec loop.
+			timer_us_one_second +=	value_us_one_second - tv.tv_usec;
+
+//			Serial.printf("Time: %6u: %s", tv.tv_usec, ctime(&tv.tv_sec));
+
+			loop_1s_tick_wspr(
+				tv.tv_sec % (3600 * 24)	/ 3600,
+				tv.tv_sec % (3600) 		/ 120,
+				tv.tv_sec % (120)
+			);
+
+			loop_1s_tick_clock(
+				tv.tv_sec
+			);
+		}
+	}
+}
+
+
+// Used for slower processing, timing from the cpu xtal
+void loop_20ms_tick() 
+{
+	if ((millis() - timer_ms_20ms_loop) >= value_ms_20ms_loop)	// Every 20ms...
+	{
+		if (timer_ms_20ms_loop == 0)
+			timer_ms_20ms_loop = millis();
+
+		timer_ms_20ms_loop += value_ms_20ms_loop;
 
 		time_t		now			= time(nullptr);
 		uint16_t	sec			= now % 60;
-static 	int8_t 		last_sec	= -1;
 
 		// Check if button is pressed to lightup the display
 		int switchStatus = digitalRead(BUTTON_INPUT);		// read status of switch
@@ -704,8 +681,6 @@ static 	int8_t 		last_sec	= -1;
 				else
 					ssd1306_display_off();
 
-				last_sec = -1;								// Fast update of the display
-
 				PRINTF_P("Button pressed, display_status=%d\n", display_status);
 			  }
 		}
@@ -719,67 +694,62 @@ static 	int8_t 		last_sec	= -1;
 			delay(3);
 			digitalWrite(LED_BUILTIN, HIGH);
 		}
-
-		//++ Updates for every second
-		//
-		if (sec != last_sec)
-		{
-			last_sec = sec;
-
-			uint32_t s = millis();
-
-			//
-			//++ At every 2 minute interval start a WSPR message, if slot is richt.
-			//
-			if (now % 120 == 0)										// First second of the 2 minute interval clock
-			{
-				char const* call = NULL;
-				wspr_slot = (now / 120) % WSPR_SLOTS_MAX;			// Slot in the hour, 0..29
-
-				if (wspr_slot == 0)
-					make_slot_plan(false);
-
-				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_1)		// Type 1 message: CALL, LOC4, dBm
-					call = HAM_CALL;
-
-				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_2)		// Type 2 message: pre/CALL/suff, dBm
-					call = HAM_PREFIX HAM_CALL HAM_SUFFIX;
-
-				if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_3)		// Type 3 message: hash <pre/CALL/suff>, LOC6, dBm
-					call = "<" HAM_PREFIX HAM_CALL HAM_SUFFIX ">";
-
-				if (call != NULL)
-					wspr_tx_init(call);
-			}
-
-			//
-			//++ Set the random seed ones every day.
-			//   Posible track of (semi) random numbers!
-			if (now % 3600*24 == 114)
-			{
-				PRINTF_P("Set the const ramdom seed number 0x%08x\n", CHIP_RANDOM_SEED);
-				randomSeed(CHIP_RANDOM_SEED);
-			}
-
-			if (display_status == DISPLAY_ON)
-			{
-				//++ At every 2 minute interval, at second 113, print the temperature
-				if (now % 120 == 113) {
-					ReadTemperature();
-					PRINT_P("Time now: ");	PRINT(ctime(&now));
-				}
-				ssd1306_main_window(now);
-			}
-
-			s = millis() - s;
-			if (s > 150)	// 147ms
-				PRINTF_P("Long-time: %d\n", s);
-
-		}   	// One second lus
 	}   		// 50Hz code lus
 }
 
-#endif
+void loop_1s_tick_wspr(uint8_t hour, uint8_t slot, uint8_t slot_sec)
+{
+	//
+	//++ At every 2 minute interval start a WSPR message, if slot is richt.
+	//
+	if (slot_sec == 0)										// First second of the 2 minute interval clock
+	{
+		wspr_slot = slot;
+
+		Serial.printf("WSPR-Time: %2u:%02u:%03u\n", hour, wspr_slot, slot_sec);
+
+		char const* call = NULL;
+
+		if (wspr_slot == 0)
+			make_slot_plan(false);
+
+		if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_1)		// Type 1 message: CALL, LOC4, dBm
+			call = HAM_CALL;
+
+		if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_2)		// Type 2 message: pre/CALL/suff, dBm
+			call = HAM_PREFIX HAM_CALL HAM_SUFFIX;
+
+		if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_3)		// Type 3 message: hash <pre/CALL/suff>, LOC6, dBm
+			call = "<" HAM_PREFIX HAM_CALL HAM_SUFFIX ">";
+
+		if (call != NULL)
+			wspr_tx_init(call);
+	}
+
+	//
+	//++ Set the random seed ones every day.
+	//   Posible track of (semi) random numbers!
+	// 114 sec is after a wspr tx!
+	if (hour == 23 && slot == 29 && slot_sec == 114)
+	{
+		PRINTF_P("Set the const ramdom seed number 0x%08x\n", CHIP_RANDOM_SEED);
+		randomSeed(CHIP_RANDOM_SEED);
+	}
+
+}
+
+void loop_1s_tick_clock(time_t now)
+{
+	//++ At every 2 minute interval, at second 113, get/print the temperature
+	if (now % 120 == 113) 
+	{
+		ReadTemperature();
+//		PRINT_P("Time now: ");
+//		PRINT(ctime(&now));
+	}
+
+	ssd1306_main_window(now);
+}
 
 static void init_si5351()
 {
@@ -788,7 +758,8 @@ static void init_si5351()
 	ssd1306_text(200, "Si5351", "Setup");
 
 	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION) )
-	{	// Disable the clock initially...
+	{
+		// Disable the clock initially...
 		wspr_tx_disable(SI5351_CLK0);
 		wspr_tx_disable(SI5351_CLK1);
 		wspr_tx_disable(SI5351_CLK2);
@@ -801,15 +772,17 @@ static void init_si5351()
 
 void wspr_tx_init(const char* call)
 {
-	PRINTF_P("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call, HAM_LOCATOR, HAM_POWER);
+//	PRINTF_P("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call, HAM_LOCATOR, HAM_POWER);
 
 	wspr.wspr_encode(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
 	print_wspr_symbols(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 #endif
-	timer_wspr_bit_ms = millis();
-	value_wspr_bit_ms_float = value_wspr_bit_ms_incr;	// First ms value
-	value_wspr_bit_ms = value_wspr_bit_ms_float + 0.5;	//   copy and round to uint32_t
+
+	timer_us_wspr_bit = micros();
+//	timer_wspr_bit_ms = millis();
+//	value_wspr_bit_ms_float = value_wspr_bit_ms_incr;	// First ms value
+//	value_wspr_bit_ms = value_wspr_bit_ms_float + 0.5;	//   copy and round to uint32_t
 
 	wspr_tx_bit();
 }
@@ -894,26 +867,82 @@ void wspr_tx_disable(si5351_clock clk)
 
 void ssd1306_main_window(time_t now)
 {
+	struct timeval	tv;
 	char		buffer[30];
 	struct tm*	timeinfo;
 	int16_t   	x,y;
 	uint16_t  	w,h;
 	int			ns = wspr_slot;	// next slot
 
+
+	if (display_status == DISPLAY_OFF)
+		return;
+
+	if ((millis() - timer_ms_display_auto_off) >= value_ms_display_auto_off)
+	{
+		ssd1306_display_off();
+		return;
+	}
+
+	gettimeofday(&tv, NULL);			// Get the current time in usec
+
+
+
 	ssd1306_background();
+	if (ntp_time_sync)
+	{
+		timeinfo = localtime (&tv.tv_sec);
+		strftime (buffer ,sizeof buffer ,"%H:%M:%S", timeinfo);
+		display.setTextSize(2);
+		w = getFontStringWidth(buffer);
+		display.setCursor((display.width() - w) / 2 , 12);
+		display.print(buffer);
 
-	timeinfo = localtime (&now);
-	strftime (buffer ,sizeof buffer ,"%H:%M:%S", timeinfo);
-	display.setTextSize(2);
-	w = getFontStringWidth(buffer);
-	display.setCursor((display.width() - w) / 2 , 12);
-	display.print(buffer);
+		strftime (buffer ,sizeof buffer ,"- %d/%m/%Y -", timeinfo);
+		display.setTextSize(1);
+		w = getFontStringWidth(buffer);
+		display.setCursor((display.width() - w) / 2 , 32);
+		display.print(buffer);
+	}
+	else
+	{
+//		ssd1306_text(500, "Waiting", "NTP sync");
+/*
+	if (wifi_status_previous != WiFi.status())
+	{
+		wifi_status_previous = WiFi.status();
 
-	strftime (buffer ,sizeof buffer ,"- %d/%m/%Y -", timeinfo);
-	display.setTextSize(1);
-	w = getFontStringWidth(buffer);
-	display.setCursor((display.width() - w) / 2 , 32);
-	display.print(buffer);
+		switch(wifi_status_previous)
+		{
+			case WL_CONNECTED:		ssd1306_wifi_page();						break;
+			case WL_CONNECT_FAILED:	ssd1306_text(200, "WiFi", "FAILED");		break;
+			case WL_WRONG_PASSWORD:	ssd1306_text(200, "WiFi", "Error PASSWD");	break;
+			case WL_DISCONNECTED:	ssd1306_text(200, "WiFi", "Disconnected");	break;
+			case WL_NO_SSID_AVAIL:	ssd1306_text(200, "WiFi", "No SSID avail");	break;
+			case WL_IDLE_STATUS:	ssd1306_text(200, "WiFi", "Idle status");	break;
+			default:				ssd1306_text(200, "WiFi", "ERROR");
+									PRINTF_P("WiFi status unknow = %d\n", wifi_status_previous);
+									break;
+		}
+*/
+
+		if (WiFi.status() != WL_CONNECTED)
+			strcpy(buffer, "WiFi disconnect");
+		else
+			strcpy(buffer, "sNTP Waiting");
+
+		display.setTextSize(1);
+		w = getFontStringWidth(buffer);
+		display.setCursor((display.width() - w) / 2 , 16+2);
+		display.print(buffer);
+
+		strcpy(buffer, "- Syncing -");
+
+		display.setTextSize(1);
+		w = getFontStringWidth(buffer);
+		display.setCursor((display.width() - w) / 2 , 32-2);
+		display.print(buffer);
+	}
 
 	sprintf(buffer, "%s/%s/%ddBm", HAM_CALL, HAM_LOCATOR, HAM_POWER);
 	w = getFontStringWidth(buffer);
@@ -924,7 +953,7 @@ void ssd1306_main_window(time_t now)
 	{
 		uint16_t B,E;
 		B = 4;
-		E = B + now % 120;
+		E = B + tv.tv_sec % 120;
 		display.drawLine(B, display.height()-14, E, display.height()-14, WHITE);
 		display.drawLine(B, display.height()-16, E, display.height()-16, WHITE);
 
@@ -934,13 +963,13 @@ void ssd1306_main_window(time_t now)
 	else
 	{
 		// Calculate the next tx time and slot
-		uint16_t w = 120 - (now % 120);
+		uint16_t w = 120 - (tv.tv_sec % 120);
 		while (wspr_slot_tx[ns++] == WSPR_TX_NONE) 
 		{
 			if (ns >= WSPR_SLOTS_MAX) ns = 0;
 			w += 120;
 		}
-		if (w < 3600) 
+		if (w < 3600)
 		{
 			// Display time next tx
 			sprintf(buffer, "TX %02d:%02d", w/60, w%60);
@@ -1000,14 +1029,14 @@ void ssd1306_background()
 
 void ssd1306_display_on()
 {
-	PRINTF_P("Display On for %dsec.\n", value_display_auto_off/1000);
-	timer_display_auto_off = millis();		// Start the display ON timer
+	PRINTF_P("Display On for %dsec.\n", value_ms_display_auto_off/1000);
+	timer_ms_display_auto_off = millis();		// Start the display ON timer
 	display_status  = DISPLAY_ON;
 }
 
 void ssd1306_display_off()
 {
-	PRINTF_P("Display auto Off at %d sec.\n", value_display_auto_off/1000);
+	PRINTF_P("Display auto Off at %d sec.\n", value_ms_display_auto_off/1000);
 	display.clearDisplay();
 	display.invertDisplay(false);
 	display.display();
