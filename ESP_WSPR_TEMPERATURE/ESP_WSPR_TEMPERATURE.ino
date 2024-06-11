@@ -238,7 +238,7 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 					float	TempCorrection;			// DS18B20 temp correction, at 18/08/2022
 				} ESPChipInfo[] 
 =
-{	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "WsprTX", 	-5.0 }	// Arduino shield, 0x19570215
+{	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, 0x19570215
 ,	{ 0x62df37, 116860,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard
 ,	{ -1, 		0,		0X5555,		1*60000, "WsprESP",  0.0 }	// Default
 };
