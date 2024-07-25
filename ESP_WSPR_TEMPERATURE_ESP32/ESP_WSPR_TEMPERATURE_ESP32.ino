@@ -163,7 +163,7 @@
 #include <WiFiMulti.h>          // Include the Wi-Fi-Multi library
 #include <esp_sntp.h>
 #include "esp_log.h"
-static const char *TAG = "wspr-tx";
+static const char *TAG = "WSPR";
 #endif
 
 #include <time.h>
@@ -275,9 +275,10 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 					float	TempCorrection;			// DS18B20 temp correction, at 18/08/2022
 				} ESPChipInfo[] 
 =
-{	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, 0x19570215
-,	{ 0x62df37, 116860,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard
-,	{ -1, 		0,		0X5555,		1*60000, "WsprESP",  0.0 }	// Default
+{	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "WsprTX",		-3.7 }	// Arduino shield, 0x19570215
+,	{ 0x62df37, 116860,	0x19561113, 5*60000, "WsprTST",		-1.0 }	// Breadboard
+,	{ 0x814A1C, 116860,	0x19561113, 15*60000, "WsprESP32",	 0.0 }	// ESP32 board SDD1306
+,	{ -1, 		0,		0X5555,		1*60000, "WsprESP",		 0.0 }	// Default
 };
 
 static		int		CHIP_FREQ_CORRECTION;
@@ -392,15 +393,17 @@ uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 //---------------------------------------------------------------------------------
 void setup()
 {
-  //ESP32
+	//ESP32
 	// Find the ESP chip-id specific data.
 #ifdef ESP8266
 	int i = 0, chipid = ESP.getChipId();
 #else
-  int i = 0, chipid = 0;
-  for (int i = 0; i < 17; i = i + 8) {
-    chipid |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
-  }
+	int i = 0, chipid = 0;
+	for (int i = 0; i < 17; i = i + 8) 
+	{
+		chipid |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
+	}
+	ESP_LOGI(TAG, "ESP32 ChipID = %X", chipid);
 #endif
   
 	while(true)
@@ -1149,16 +1152,9 @@ void ssd1306_background()
 
 void ssd1306_display_on()
 {
-  Serial.println("=====================================: 01 :----------------");
-
 	PRINTF_P("Display On for %dsec.\n", value_ms_display_auto_off/1000);
-
-  Serial.println("=====================================: 02 :----------------");
-
 	timer_ms_display_auto_off = millis();		// Start the display ON timer
 	display_status  = DISPLAY_ON;
-
-  Serial.println("=====================================: 03 :----------------");
 }
 
 void ssd1306_display_off()

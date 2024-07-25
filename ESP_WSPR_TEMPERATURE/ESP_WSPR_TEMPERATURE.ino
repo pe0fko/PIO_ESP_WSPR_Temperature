@@ -34,7 +34,10 @@
 
 #define		FEATURE_OTA
 #define		FEATURE_mDNS
-//#define		FEATURE_CARRIER
+#define		FEATURE_CARRIER
+  #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_17m + 100)
+  #define   CARRIER_SI5351_CLK     SI5351_CLK0
+  
 //#define		FEATURE_1H_FAST_TX
 //#define		FEATURE_PRINT_TIMESLOT
 //#define		FEATURE_PRINT_WSPR_SIMBOLS
@@ -198,14 +201,15 @@ const	uint32_t		value_us_one_second		= 1000000UL;		// micro second (us)
 static	uint32_t		timer_us_one_second		= 0;				// micros()
 static	uint32_t		value_ms_display_auto_off;					// Display on time, load per chip
 static	uint32_t		timer_ms_display_auto_off;
-//const	uint32_t		value_ms_ntp_faild_reboot= 3600 * 1000;		// 1 hour (ntp must be updated in this time)
-//static uint32_t		timer_ms_ntp_faild_reboot;
+const	uint32_t		value_ms_ntp_faild_reboot= 30 * 60 * 1000;	// 1/2 hour (ntp must be init updated in this time)
+static	uint32_t		timer_ms_ntp_faild_reboot;
 const   uint32_t		value_ms_led_blink_on	= 3141UL;			// 4sec interval blink led
 static  uint32_t		timer_ms_led_blink_on	= 0;
 const   uint32_t		value_ms_led_blink_off	= 3UL;				// 3ms led on
 static  uint32_t		timer_ms_led_blink_off	= 0;
 
 const	uint32_t		sntp_update_delay		= 3600 * 1000UL;	// NTP update every 1h
+volatile bool			ntp_time_sync_first		= false;			// First time, no Unix Epoch
 volatile bool			ntp_time_sync			= false;
 static	float			temperature_now			= 0.0;
 static  uint8_t			switchStatusLast		= HIGH;				// last status hardware switch
@@ -284,8 +288,8 @@ void make_slot_plan(bool setup)
 #endif
 
 #if 1
+//	Even slot 40m, odd 20m, PA3EDR testing.
 	{
-		// Even slot 40m, PA3EDR testing.
 		int bnd = 25;					// Use audio band 25--175 Hz
 		for (int i = 0; i < WSPR_SLOTS_MAX; 
 				i += 1)
@@ -302,8 +306,10 @@ void make_slot_plan(bool setup)
 		wspr_slot_tx  [2]			= WSPR_TX_TYPE_3;
 	}
 //#elif 1
+//	Add the temperature coding in a seperate hf band.
 	{
-		int   s0,s1,s2,s3,t;
+//		int   s0,s1,s2,s3,t;
+		int   s1,s2,s3,t;
 		float tf;
 
 		ReadTemperature();
@@ -319,9 +325,10 @@ void make_slot_plan(bool setup)
 		s1 =  0 + t / 100;	t %= 100;			// 0-6 :  0 .. 12 min
 		s2 = 10 + t /  10;	t %= 10;			// 0-9 : 20 .. 38 min
 		s3 = 20 + t /   1;						// 0-9 : 40 .. 58 min
-		s0 = s1 + 1;							// After first digit tx
+//		s0 = s1 + 1;							// After first digit tx
 
-		PRINTF_P("TX Slots: loc[%d], temp[%d, %d, %d]\n", s0, s1, s2, s3);
+//		PRINTF_P("TX Slots: loc[%d], temp[%d, %d, %d]\n", s0, s1, s2, s3);
+		PRINTF_P("TX Slots: temperature code [%d, %d, %d]\n", s1, s2, s3);
 
 //		wspr_slot_tx[s0]		= WSPR_TX_TYPE_3;	// TX locator 6
 		wspr_slot_tx[s1]		= WSPR_TX_TYPE_2;	// Comp, no locator
@@ -370,6 +377,9 @@ void setup()
 	randomSeed(CHIP_RANDOM_SEED);
 	value_ms_display_auto_off = CHIP_DISPLAY_AUTO_OFF;
 	HostName = CHIP_HOSTNAME;
+
+	ntp_time_sync_first = false;
+	ntp_time_sync = false;
 
 	Serial.begin(115200);				// 115200
 	Serial.setTimeout(2000);
@@ -445,18 +455,9 @@ void setup()
 	digitalWrite(LED_BUILTIN, HIGH);	// High is off!
 
 #ifdef FEATURE_CARRIER
-//#if 1
-	si5351.set_freq( SI5351_FREQ_MULT * 7040100, SI5351_CLK0 );
-	wspr_tx_enable(SI5351_CLK0);
-
-//	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][0], SI5351_CLK0 );
-//	wspr_tx_enable(SI5351_CLK0);
-//	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][1], SI5351_CLK1 );
-//	wspr_tx_enable(SI5351_CLK1);
-//	si5351.set_freq( SI5351_FREQ_MULT * wspr_slot_freq[0][2], SI5351_CLK2 );
-//	wspr_tx_enable(SI5351_CLK2);
-
-//	PRINTF_P("CW Carrier on: %fMHz\n", (float)(WSPR_TX_FREQ + 100)/1e6);
+  PRINTF_P("CW Carrier on: %fMHz (CLK%d)\n", (float)CARRIER_FREQUENCY/1e6, CARRIER_SI5351_CLK);
+  si5351.set_freq( SI5351_FREQ_MULT * CARRIER_FREQUENCY, CARRIER_SI5351_CLK );
+  wspr_tx_enable(CARRIER_SI5351_CLK);
 #endif
 
 	ssd1306_text(200, "Start", "looping");
@@ -473,30 +474,29 @@ void setup()
 
 void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo)
 {
+	ntp_time_sync = false;
+	settimeofday_cb(sntp_time_is_set);			// Call-back function
+	configTime(MYTZ, "time.google.com","nl.pool.ntp.org");
+	sntp_init();
+
+//	timer_ms_ntp_faild_reboot = millis();
+
 	PRINTF_P("WiFi connected: IP:%s/%s GW:%s\n",
 		ipInfo.ip.toString().c_str(),
 		ipInfo.mask.toString().c_str(),
 		ipInfo.gw.toString().c_str()
 		);
-
-	settimeofday_cb(sntp_time_is_set);			// Call-back function
-	configTime(MYTZ, "time.google.com","nl.pool.ntp.org");
-
-	sntp_init();
-
-	ntp_time_sync = false;
-
-//	timer_ms_ntp_faild_reboot = millis();
 }
 
 // callback routine - arrive here whenever a successful NTP update has occurred
 void sntp_time_is_set(bool from_sntp)
 {
+	ntp_time_sync_first = true;		// There is some time, not the Unix Epoch.
+	ntp_time_sync = true;			// and the new time is set
+
 	time_t now = time(nullptr);          // get UNIX timestamp
 	PRINT_P("NTP update done at: ");
 	PRINT(ctime(&now));
-
-	ntp_time_sync = true;
 }
 
 
@@ -549,9 +549,8 @@ void loop()
 	MDNS.update();
 	#endif
 
-#if 0
 	// Wait for the NTP time service is known!
-	if (!ntp_time_sync)
+	if (!ntp_time_sync_first)
 	{
 		if ((millis() - timer_ms_ntp_faild_reboot) >= value_ms_ntp_faild_reboot)
 		{
@@ -561,11 +560,9 @@ void loop()
 			ESP.restart();
 		}
 
-// Maak langere loops met timer
-//		ssd1306_text(500, "Waiting", "NTP sync");
-//		return;		// Return the loop!!
+		// Maak langere loops met timer
+		ssd1306_text(200, "Waiting", "NTP first sync");
 	}
-#endif
 }
 
 void loop_wspr_tx()
@@ -614,21 +611,28 @@ void loop_1s_tick()
 				1000000UL - tv.tv_usec;			// Still need to wait the last part of us
 		}
 		else
-		{
-			// On time or to late, both run the sec loop.
-			timer_us_one_second +=	value_us_one_second - tv.tv_usec;
+		{	// On time or to late, both run the sec loop.
 
+			timer_us_one_second +=	value_us_one_second - tv.tv_usec;
 //			Serial.printf("Time: %6u: %s", tv.tv_usec, ctime(&tv.tv_sec));
 
-			loop_1s_tick_wspr(
-				tv.tv_sec % (3600 * 24)	/ 3600,
-				tv.tv_sec % (3600) 		/ 120,
-				tv.tv_sec % (120)
-			);
+			uint8_t hour		= tv.tv_sec % (3600 * 24)	/ 3600;
+			uint8_t slot		= tv.tv_sec % (3600) 		/ 120;
+			uint8_t slot_sec	= tv.tv_sec % (120);
 
-			loop_1s_tick_clock(
-				tv.tv_sec % (120)
-			);
+			if (ntp_time_sync_first)
+				loop_1s_tick_wspr(hour, slot, slot_sec);
+
+			loop_1s_tick_clock(slot_sec);
+
+			//++ Set the random seed ones every day.
+			//   Posible track of (semi) random numbers!
+			if (hour == 23 && slot == 29 && slot_sec == wspr_free_second)
+			{
+				PRINTF_P("Set the const ramdom seed number 0x%08x\n", CHIP_RANDOM_SEED);
+				randomSeed(CHIP_RANDOM_SEED);
+			}
+
 		}
 	}
 }
@@ -744,14 +748,6 @@ void loop_1s_tick_wspr(uint8_t hour, uint8_t slot, uint8_t slot_sec)
 
 		else if (wspr_slot_tx[wspr_slot] == WSPR_TX_TYPE_3)		// Type 3 message: hash <pre/CALL/suff>, LOC6, dBm
 			wspr_tx_init("<" HAM_PREFIX HAM_CALL HAM_SUFFIX ">");
-	}
-
-	//++ Set the random seed ones every day.
-	//   Posible track of (semi) random numbers!
-	if (hour == 23 && slot == 29 && slot_sec == wspr_free_second)
-	{
-		PRINTF_P("Set the const ramdom seed number 0x%08x\n", CHIP_RANDOM_SEED);
-		randomSeed(CHIP_RANDOM_SEED);
 	}
 }
 
