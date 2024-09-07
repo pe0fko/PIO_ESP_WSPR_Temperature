@@ -24,11 +24,12 @@
 
 #define		VERSION		"V3.0"
 
-//#define	LOC_PE0FKO
+#define	LOC_PE0FKO_40m_0
+//#define	LOC_PE0FKO_40m_1
 //#define	LOC_PA3EQN
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
-#define	LOC_LA_MOTHE_40m
+//#define	LOC_LA_MOTHE_40m
 //#define	LOC_LA_MOTHE_30m
 //#define	LOC_LA_MOTHE_20m
 
@@ -37,9 +38,8 @@
 #define		FEATURE_CARRIER
   #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_17m + 100)
   #define   CARRIER_SI5351_CLK     SI5351_CLK0
-  
 //#define		FEATURE_1H_FAST_TX
-//#define		FEATURE_PRINT_TIMESLOT
+#define		FEATURE_PRINT_TIMESLOT
 //#define		FEATURE_PRINT_WSPR_SIMBOLS
 
 // WSPR Type 1:
@@ -61,7 +61,7 @@
 
 // Update JTEncode.cpp library at line 1000 for 1 char prefix!
 
-#if defined LOC_PE0FKO
+#if defined LOC_PE0FKO_40m_0
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
@@ -70,6 +70,17 @@
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m	// TX freqency Si5351 OSC 0
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 1
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 2
+	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
+#elif defined LOC_PE0FKO_40m_1
+	#define	HAM_PREFIX      ""				// Prefix of the ham call
+	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
+	#define	HAM_SUFFIX      ""				// Suffix of the ham call
+	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
+	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
+	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 0
+	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_40m	// TX freqency Si5351 OSC 1
+	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 2
+	#define	WSPR_OUT_CLK	1				// Si5351 Clock output
 #elif defined LOC_PA3EQN
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PA3EQN"        // Ham radio call sign
@@ -265,7 +276,7 @@ void make_slot_plan(bool setup)
 	{
 		wspr_slot_tx  [i]		= WSPR_TX_NONE;
 		wspr_slot_band[i]		= rnd0;
-		wspr_slot_freq[i][0]	= WSPR_TX_FREQ_0;
+		wspr_slot_freq[i][0]	= WSPR_TX_FREQ_0;		// _none
 		wspr_slot_freq[i][1]	= WSPR_TX_FREQ_1;
 		wspr_slot_freq[i][2]	= WSPR_TX_FREQ_2;
 	}
@@ -299,7 +310,7 @@ void make_slot_plan(bool setup)
 			bnd += 5;
 			if (bnd >= 175) bnd = 25; 	// Step size if 5 Hz
 			wspr_slot_tx  [i]		= WSPR_TX_TYPE_2;
-			wspr_slot_freq[i][0]	= i & 1 ? WSPR_TX_FREQ_20m : WSPR_TX_FREQ_40m;
+			wspr_slot_freq[i][WSPR_OUT_CLK]	= i & 1 ? WSPR_TX_FREQ_20m : WSPR_TX_FREQ_40m;
 		}
 
 		// TX ones every hour the 6 char QTH locator.	
@@ -335,10 +346,10 @@ void make_slot_plan(bool setup)
 		wspr_slot_tx[s2]		= WSPR_TX_TYPE_2;	// Comp, no locator
 		wspr_slot_tx[s3]		= WSPR_TX_TYPE_2;	// Comp, no locator
 
-//		wspr_slot_freq[s0][0]	= WSPR_TX_FREQ_30m;
-		wspr_slot_freq[s1][0]	= WSPR_TX_FREQ_30m;
-		wspr_slot_freq[s2][0]	= WSPR_TX_FREQ_30m;
-		wspr_slot_freq[s3][0]	= WSPR_TX_FREQ_30m;
+//		wspr_slot_freq[s0][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
+		wspr_slot_freq[s1][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
+		wspr_slot_freq[s2][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
+		wspr_slot_freq[s3][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
 	}
 #endif
 
@@ -346,7 +357,7 @@ void make_slot_plan(bool setup)
 	PRINT_P("Time Slot:\n");
 	for(uint8_t i=0; i < WSPR_SLOTS_MAX; ++i) {
 		if (wspr_slot_tx[i] != WSPR_TX_NONE)
-			PRINTF_P("\t%02d:wspr%d-%d+%d\n", i, wspr_slot_tx[i], wspr_slot_freq[i], wspr_slot_band[i]);
+			PRINTF_P("\t%02d:WSPR%d-[%d,%d,%d]+%d\n", i, wspr_slot_tx[i], wspr_slot_freq[i][0], wspr_slot_freq[i][1], wspr_slot_freq[i][2], wspr_slot_band[i]);
 	}
 	PRINT_P("\n");
 #endif
