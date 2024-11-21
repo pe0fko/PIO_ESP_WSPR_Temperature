@@ -81,15 +81,6 @@
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_40m	// TX freqency Si5351 OSC 1
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 2
 	#define	WSPR_OUT_CLK	1				// Si5351 Clock output
-#elif defined LOC_PA3EQN
-	#define	HAM_PREFIX      ""				// Prefix of the ham call
-	#define	HAM_CALL        "PA3EQN"        // Ham radio call sign
-	#define	HAM_SUFFIX      ""				// Suffix of the ham call
-	#define	HAM_LOCATOR     "JO32cc"		// JO32CC
-	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
-	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
 #elif defined LOC_PA_PE0FKO
 	#define	HAM_PREFIX      "PA/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
@@ -161,8 +152,7 @@
 #include <Adafruit_SSD1306.h>		// Adafruit SSD1306 Wemos Mini OLED
 #include <si5351.h>					// Etherkit
 #include <JTEncode.h>				// Etherkit
-#include <DallasTemperature.h>
-
+#include <DallasTemperature.h>		// Temperature sensor Dallas DS18B20
 #include <ESP8266WiFiMulti.h>		// Include the Wi-Fi-Multi library
 #include <WiFi_SSID.h>				// WiFi SSID's from know networks
 
@@ -265,32 +255,31 @@ static		String	CHIP_HOSTNAME;
 static		float	CHIP_TEMP_CORRECTION;
 
 // Forward reference
-void ReadTemperature();
-void ssd1306_display_on();
-void ssd1306_display_off();
-void ssd1306_text(uint16_t delay_ms, const char* txt1, const char* txt2=NULL);
-void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo);
-void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo);
-static void init_mdns();
-static void init_si5351();
-void wspr_tx_enable(si5351_clock clk);
-void ssd1306_main_window();
-void sntp_time_is_set(bool from_sntp);
-void loop_wspr_tx();
-void loop_1s_tick();
-void loop_20ms_tick();
-void loop_wifi_tick();
-void loop_led_tick();
-void wspr_tx_bit();
-void loop_1s_tick_wspr(uint8_t hour, uint8_t slot, uint8_t slot_sec);
-void loop_1s_tick_clock(uint8_t slot_sec);
-void wspr_tx_init(const char* call);
-void wspr_tx_disable(si5351_clock clk);
-void wspr_tx_freq(si5351_clock clk);
-void wspr_tx_enable(si5351_clock clk);
-void ssd1306_background();
-uint16_t getFontStringWidth(const String& str);
-
+void		ReadTemperature();
+void		ssd1306_display_on();
+void		ssd1306_display_off();
+void		ssd1306_text(uint16_t delay_ms, const char* txt1, const char* txt2=NULL);
+void		onWifiConnect(const WiFiEventStationModeGotIP& ipInfo);
+void		onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo);
+static void	init_mdns();
+static void	init_si5351();
+void		wspr_tx_enable(si5351_clock clk);
+void		ssd1306_main_window();
+void		sntp_time_is_set(bool from_sntp);
+void		loop_wspr_tx();
+void		loop_1s_tick();
+void		loop_20ms_tick();
+void		loop_wifi_tick();
+void		loop_led_tick();
+void		wspr_tx_bit();
+void		loop_1s_tick_wspr(uint8_t hour, uint8_t slot, uint8_t slot_sec);
+void		loop_1s_tick_clock(uint8_t slot_sec);
+void		wspr_tx_init(const char* call);
+void		wspr_tx_disable(si5351_clock clk);
+void		wspr_tx_freq(si5351_clock clk);
+void		wspr_tx_enable(si5351_clock clk);
+void		ssd1306_background();
+uint16_t	getFontStringWidth(const String& str);
 
 //
 // Make a plan to TX in one of the 30 slots (2min inteval in a hour).
