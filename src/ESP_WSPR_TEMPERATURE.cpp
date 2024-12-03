@@ -36,7 +36,8 @@
 #define		FEATURE_OTA
 #define		FEATURE_mDNS
 #define		FEATURE_CARRIER
-  #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_17m + 100)
+//  #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_17m + 100)
+  #define   CARRIER_FREQUENCY      (10000000UL)
   #define   CARRIER_SI5351_CLK     SI5351_CLK0
 //#define		FEATURE_1H_FAST_TX
 #define		FEATURE_PRINT_TIMESLOT
@@ -236,7 +237,7 @@ const	int32_t      	wspr_sym_freq[4] =
 };
 
 static	struct {	int 	ChipId;					// ESP Chip ID
-					int 	FreqCorrection;			// Si5351 frequency correction
+					int 	FreqCorrection;			// Si5351 frequency correction, PPB
 					int 	RandomSeed;				// Daily pseudo random number, freq
 					int		DisplayAutoOff;			// Switch display off timeout
 					String	Hostname;				// mDNS & OTA hostname
@@ -244,7 +245,8 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 				} ESPChipInfo[] 
 =
 {	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, 0x19570215
-,	{ 0x62df37, 116860,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard
+//,	{ 0x62df37, 116860,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard
+,	{ 0x62df37, -620,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
 ,	{ -1, 		0,		0X5555,		1*60000, "WsprESP",  0.0 }	// Default
 };
 
@@ -316,14 +318,16 @@ void make_slot_plan(bool setup)
 #if 1
 //	Even slot 40m, odd 20m, PA3EDR testing.
 	{
-		int bnd = 25;					// Use audio band 25--175 Hz
+//		int bnd = 25;					// Use audio band 25--175 Hz
 		for (int i = 0; i < WSPR_SLOTS_MAX; 
 				i += 1)
 //				i += 2)
 		{
-			wspr_slot_band[i]		= bnd;
-			bnd += 5;
-			if (bnd >= 175) bnd = 25; 	// Step size if 5 Hz
+			wspr_slot_band[i]		= 50;
+//			wspr_slot_band[i]		= bnd;
+//			bnd += 5;
+//			if (bnd >= 175) bnd = 25; 	// Step size if 5 Hz
+
 			wspr_slot_tx  [i]		= WSPR_TX_TYPE_2;
 			wspr_slot_freq[i][WSPR_OUT_CLK]	= i & 1 ? WSPR_TX_FREQ_20m : WSPR_TX_FREQ_40m;
 		}
