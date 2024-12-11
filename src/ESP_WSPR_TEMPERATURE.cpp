@@ -22,11 +22,10 @@
 // Using library ArduinoOTA at version 1.0
 //
 
-#define		VERSION		"V3.0"
+#define		VERSION		"V3.1"
 
-#define	LOC_PE0FKO_40m_0
+#define	LOC_PE0FKO_40m
 //#define	LOC_PE0FKO_40m_1
-//#define	LOC_PA3EQN
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
 //#define	LOC_LA_MOTHE_40m
@@ -37,11 +36,13 @@
 #define		FEATURE_mDNS
 #define		FEATURE_CARRIER
 //  #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_17m + 100)
-  #define   CARRIER_FREQUENCY      (10000000UL)
+  #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_40m + 100)
+//  #define   CARRIER_FREQUENCY      (10000000UL)
   #define   CARRIER_SI5351_CLK     SI5351_CLK0
 //#define		FEATURE_1H_FAST_TX
 #define		FEATURE_PRINT_TIMESLOT
 //#define		FEATURE_PRINT_WSPR_SIMBOLS
+//#define		FEATURE_CHECK_TIMING
 
 // WSPR Type 1:
 // The standard message is <callsign> + <4 character locator> + <dBm transmit power>;
@@ -62,7 +63,7 @@
 
 // Update JTEncode.cpp library at line 1000 for 1 char prefix!
 
-#if defined LOC_PE0FKO_40m_0
+#if defined LOC_PE0FKO_40m
 	#define	HAM_PREFIX      ""				// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
 	#define	HAM_SUFFIX      ""				// Suffix of the ham call
@@ -72,16 +73,6 @@
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 1
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 2
 	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
-#elif defined LOC_PE0FKO_40m_1
-	#define	HAM_PREFIX      ""				// Prefix of the ham call
-	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
-	#define	HAM_SUFFIX      ""				// Suffix of the ham call
-	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
-	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 0
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_40m	// TX freqency Si5351 OSC 1
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none	// TX freqency Si5351 OSC 2
-	#define	WSPR_OUT_CLK	1				// Si5351 Clock output
 #elif defined LOC_PA_PE0FKO
 	#define	HAM_PREFIX      "PA/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
@@ -244,10 +235,9 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 					float	TempCorrection;			// DS18B20 temp correction, at 18/08/2022
 				} ESPChipInfo[] 
 =
-{	{ 0x7b06f7, 13175,	0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, 0x19570215
-//,	{ 0x62df37, 116860,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard
-,	{ 0x62df37, -620,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
-,	{ -1, 		0,		0X5555,		1*60000, "WsprESP",  0.0 }	// Default
+{	{ 0x7b06f7, 0,			0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
+,	{ 0x62df37, 620+142,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
+,	{ -1, 		0,			0X5555,		1*60000, "WsprESP",  0.0 }	// Default
 };
 
 static		int		CHIP_FREQ_CORRECTION;
@@ -261,11 +251,13 @@ void		ReadTemperature();
 void		ssd1306_display_on();
 void		ssd1306_display_off();
 void		ssd1306_text(uint16_t delay_ms, const char* txt1, const char* txt2=NULL);
+void		ssd1306_printf_P(int wait, PGM_P formatP, ...);
+void		ssd1306_wifi_page();
 void		onWifiConnect(const WiFiEventStationModeGotIP& ipInfo);
 void		onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo);
 static void	init_mdns();
 static void	init_si5351();
-void		wspr_tx_enable(si5351_clock clk);
+bool		si5351_ready();
 void		ssd1306_main_window();
 void		sntp_time_is_set(bool from_sntp);
 void		loop_wspr_tx();
@@ -316,12 +308,11 @@ void make_slot_plan(bool setup)
 #endif
 
 #if 1
-//	Even slot 40m, odd 20m, PA3EDR testing.
+	//	Even slot 40m, odd 20m, PA3EDR testing.
 	{
 //		int bnd = 25;					// Use audio band 25--175 Hz
 		for (int i = 0; i < WSPR_SLOTS_MAX; 
 				i += 1)
-//				i += 2)
 		{
 			wspr_slot_band[i]		= 50;
 //			wspr_slot_band[i]		= bnd;
@@ -335,7 +326,9 @@ void make_slot_plan(bool setup)
 		// TX ones every hour the 6 char QTH locator.	
 		wspr_slot_tx  [2]			= WSPR_TX_TYPE_3;
 	}
-//#elif 1
+#endif
+
+#if 1
 //	Add the temperature coding in a seperate hf band.
 	{
 //		int   s0,s1,s2,s3,t;
@@ -371,6 +364,9 @@ void make_slot_plan(bool setup)
 		wspr_slot_freq[s3][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
 	}
 #endif
+
+
+
 
 #ifdef FEATURE_PRINT_TIMESLOT
 	PRINT_P("Time Slot:\n");
@@ -419,14 +415,13 @@ void setup()
 #endif
 	delay(1000);
 
-	PRINT_P("\n=== PE0FKO, TX WSPR temperature coded\n");
-	PRINTF_P ("=== Version: " VERSION ", Build at: %s %s\n", __TIME__, __DATE__);
-	PRINTF_P ("=== Config: " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", HAM_POWER);
+	PRINT_P ("\n=== PE0FKO, TX WSPR temperature coded\n");
+	PRINT_P ("=== Version: " VERSION ", Build at: " __DATE__ " " __TIME__ "\n");
+	PRINTF_P("=== Config: " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", HAM_POWER);
 
 	PRINTF_P("Sizeof int      : %d\n", sizeof(int));
 	PRINTF_P("Sizeof long     : %d\n", sizeof(long));
 	PRINTF_P("Sizeof long long: %d\n", sizeof(long long));
-
 	PRINTF_P("value_us_wspr_bit: %ld\n", value_us_wspr_bit);
 
 	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
@@ -438,14 +433,12 @@ void setup()
 
 	pinMode(LED_BUILTIN, OUTPUT);				// BuildIn LED
 
-	ssd1306_text(1000, "Hostname", HostName.c_str());
+	ssd1306_printf_P(800, PSTR("Hostname\n%s\n.local"), HostName.c_str());
 
 	// WiFi settings
 	WiFi.mode(WIFI_STA);						// Set WiFi to station mode
-
 	WiFi.setHostname(HostName.c_str());			// Set Hostname.
 //	wifi_station_set_hostname(HostName.c_str());
-
 	WiFi.setAutoReconnect(true);				// Keep WiFi connected
 
 	// Register WiFi event handlers
@@ -464,9 +457,9 @@ void setup()
 #ifdef FEATURE_OTA
 	// Start OTA server.
 	ArduinoOTA.setHostname((const char *)HostName.c_str());
-	ArduinoOTA.onStart([]() { ssd1306_text(200,  "Running", "OTA update"); });
-	ArduinoOTA.onEnd([]()   { ssd1306_text(2000, "Reboot",  "OTA update"); ESP.restart(); });
-	ArduinoOTA.setPassword("123");
+	ArduinoOTA.onStart([]() { ssd1306_printf_P(100, PSTR("OTA update\nRunning")); });
+	ArduinoOTA.onEnd([]()   { ssd1306_printf_P(100, PSTR("OTA update\nReboot")); ESP.restart(); });
+	ArduinoOTA.setPassword("pe0fko");
 	ArduinoOTA.begin();
 #endif
 
@@ -490,7 +483,7 @@ void setup()
   wspr_tx_enable(CARRIER_SI5351_CLK);
 #endif
 
-	ssd1306_text(200, "Start", "looping");
+	ssd1306_printf_P(300, PSTR("Start\nLooping"));
 	PRINT_P("=== Start looping...\n");
 
 	ssd1306_main_window();
@@ -516,6 +509,7 @@ void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo)
 		ipInfo.mask.toString().c_str(),
 		ipInfo.gw.toString().c_str()
 		);
+
 }
 
 // callback routine - arrive here whenever a successful NTP update has occurred
@@ -552,7 +546,8 @@ void ReadTemperature()
 #ifdef FEATURE_mDNS
 static void init_mdns()
 {
-	ssd1306_text(200, "mDNS", "Setup");
+	ssd1306_printf_P(200, PSTR("mDNS\n%s"), HostName.c_str());
+
 	if (MDNS.begin(HostName.c_str()))
 		MDNS.addService("http", "tcp", 80);
 	else
@@ -584,14 +579,14 @@ void loop()
 	{
 		if ((millis() - timer_ms_ntp_faild_reboot) >= value_ms_ntp_faild_reboot)
 		{
-			ssd1306_text(2000, "REBOOT", "NTP sync...");
+			ssd1306_printf_P(200, PSTR("REBOOT\nNTP sync"));
 			PRINT_P("REBOOT: No NTP time received.\n");
 			Serial.flush();
 			ESP.restart();
 		}
 
 		// Maak langere loops met timer
-		ssd1306_text(200, "Waiting", "NTP first sync");
+		ssd1306_printf_P(200, PSTR("Waiting\nNTP first sync"));
 	}
 }
 
@@ -600,7 +595,7 @@ void loop_wspr_tx()
 	// Send the WSPR bits into the air if active TX!
 	// When started it will wait for the bit time and start a next bit.
 
-#if 1
+#ifdef FEATURE_CHECK_TIMING
 	if (wspr_symbol_index != 0) 
 	{
 		uint32_t	diff = micros() - timer_us_wspr_bit;
@@ -620,7 +615,7 @@ void loop_wspr_tx()
 	&&  (micros() - timer_us_wspr_bit) >= value_us_wspr_bit)
 	{
 		timer_us_wspr_bit += value_us_wspr_bit;
-		wspr_tx_bit();										// Ok, transmit the net tone bit
+		wspr_tx_bit();											// Ok, transmit the net tone bit
 	}
 #endif
 }
@@ -630,15 +625,15 @@ void loop_1s_tick()
 {
 	if ((micros() - timer_us_one_second) >= value_us_one_second)
 	{
-		if (timer_us_one_second == 0)			// Initialize the timer only ones!
+		if (timer_us_one_second == 0)							// Initialize the timer only ones!
 			timer_us_one_second = micros();
 
 		struct timeval tv;
-		gettimeofday(&tv, NULL);				// Get the current time in usec
-		if (tv.tv_usec > 500000L)				// Over the half second, wait for second end
+		gettimeofday(&tv, NULL);								// Get the current time in usec
+		if (tv.tv_usec > 500000L)								// Over the half second, wait for second end
 		{
-			timer_us_one_second +=				// Set the (usec=1000000) timer for one second clock
-				1000000UL - tv.tv_usec;			// Still need to wait the last part of us
+			timer_us_one_second +=								// Set the (usec=1000000) timer for one second clock
+				1000000UL - tv.tv_usec;							// Still need to wait the last part of us
 		}
 		else
 		{	// On time or to late, both run the sec loop.
@@ -680,12 +675,9 @@ void loop_20ms_tick()
 
 		timer_ms_20ms_loop += value_ms_20ms_loop;
 
-		time_t		now			= time(nullptr);
-		uint16_t	sec			= now % 60;
-
 		// Check if button is pressed to lightup the display
-		int switchStatus = digitalRead(BUTTON_INPUT);		// read status of switch
-		if (switchStatus != switchStatusLast)				// if status of button has changed
+		int switchStatus = digitalRead(BUTTON_INPUT);			// read status of switch
+		if (switchStatus != switchStatusLast)					// if status of button has changed
 		{
 			  switchStatusLast = switchStatus;
 			  if (switchStatus == LOW)
@@ -694,10 +686,10 @@ void loop_20ms_tick()
 
 				if (display_status == DISPLAY_ON)
 				{
-					ssd1306_display_on();				  	// Start the display ON timer
-					digitalWrite(LED_BUILTIN, HIGH);		// Switch the ESP LED off
-					ReadTemperature();						// Get temperature
-					ssd1306_main_window();					// Write to display
+					ssd1306_display_on();				  		// Start the display ON timer
+					digitalWrite(LED_BUILTIN, HIGH);			// Switch the ESP LED off
+					ReadTemperature();							// Get temperature
+					ssd1306_main_window();						// Write to display
 				}
 				else
 					ssd1306_display_off();
@@ -723,12 +715,13 @@ void loop_wifi_tick()
 {
 	if (wspr_symbol_index == 0)
 	{
-//		wifiMulti.run((120 - 1 - wspr_free_second) * 1000UL);
-
 		if (wifiMulti.run((120 - 1 - wspr_free_second) * 1000UL) == WL_CONNECTED)
 		{
 			if (timer_ms_led_blink_on == 0)
+			{
 				timer_ms_led_blink_on = millis();
+				ssd1306_wifi_page();							// WIFI down after NTP???
+			}
 		}
 		else
 		{
@@ -744,7 +737,7 @@ void loop_led_tick()
 	&&  (millis() - timer_ms_led_blink_on) >= value_ms_led_blink_on)
 	{
 		timer_ms_led_blink_on += value_ms_led_blink_on;
-		digitalWrite(LED_BUILTIN, LOW);					// LED On
+		digitalWrite(LED_BUILTIN, LOW);							// LED On
 		timer_ms_led_blink_off = millis();
 	}
 
@@ -752,7 +745,7 @@ void loop_led_tick()
 	&&	(millis() - timer_ms_led_blink_off) >= value_ms_led_blink_off)
 	{
 		timer_ms_led_blink_off = 0;
-		digitalWrite(LED_BUILTIN, HIGH);				// LED Off
+		digitalWrite(LED_BUILTIN, HIGH);						// LED Off
 	}
 }
 
@@ -761,7 +754,7 @@ void loop_1s_tick_wspr(uint8_t hour, uint8_t slot, uint8_t slot_sec)
 	//
 	//++ At every 2 minute interval start a WSPR message, if slot is richt.
 	//
-	if (slot_sec == 0)										// First second of the 2 minute interval clock
+	if (slot_sec == 0)											// First second of the 2 minute interval clock
 	{
 		wspr_slot = slot;
 
@@ -792,10 +785,11 @@ void loop_1s_tick_clock(uint8_t slot_sec)
 
 static void init_si5351()
 {
-	PRINTF_P("Si5351 init: xtal:%d, correction:%d\n", SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION);
+	PRINTF_P("SI5351 init: xtal:%d, correction:%d\n", SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION);
 
-	ssd1306_text(200, "Si5351", "Setup");
+	ssd1306_printf_P(200, PSTR("SI5351\nSetup"));
 
+	// TCXO input to xtal pin 1?
 	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION) )
 	{
 		// Disable the clock initially...
@@ -803,23 +797,56 @@ static void init_si5351()
 		wspr_tx_disable(SI5351_CLK1);
 		wspr_tx_disable(SI5351_CLK2);
 
-		ssd1306_text(200, "Si5351", "OK");
+		ssd1306_printf_P(200, PSTR("SI5351\nOk"));
 	}
 	else
-		ssd1306_text(200, "Si5351", "Not found");
+	{
+		ssd1306_printf_P(200, PSTR("SI5351\nERROR"));
+	}
 }
+
+// Check if SI5351 is ready and connected
+bool si5351_ready()
+{
+	uint8_t reg_val;
+
+	Wire.begin();		// Start I2C comms
+	// Check for a device on the bus, bail out if it is not there
+	Wire.beginTransmission(SI5351_BUS_BASE_ADDR);
+	reg_val = Wire.endTransmission();
+	if(reg_val != 0)
+	{
+		ssd1306_printf_P(10*1000, PSTR("NO SI5351\n0x%04X"), reg_val);
+		return false;
+	}
+
+	reg_val = si5351.si5351_read(SI5351_DEVICE_STATUS);
+	reg_val &= 0b11100000;	// SYS_INIT | LOL_A | LOL_B
+	if (reg_val)
+	{
+		ssd1306_printf_P(5*1000, PSTR("SI5351 Error\n0x%02x"), reg_val);
+		PRINTF_P("WSPR TX, the SI5351 is not ready, 0x%02x\n", reg_val);
+		return false;
+	}
+
+	return true;
+}
+
 
 void wspr_tx_init(const char* call)
 {
-	PRINTF_P("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call, HAM_LOCATOR, HAM_POWER);
+	if (si5351_ready())
+	{
+		PRINTF_P("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call, HAM_LOCATOR, HAM_POWER);
+		wspr.wspr_encode(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 
-	wspr.wspr_encode(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
-	print_wspr_symbols(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
+		print_wspr_symbols(call, HAM_LOCATOR, HAM_POWER, wspr_symbols);
 #endif
 
-	timer_us_wspr_bit = micros();
-	wspr_tx_bit();
+		timer_us_wspr_bit = micros();
+		wspr_tx_bit();
+	}
 }
 
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
@@ -841,7 +868,7 @@ void wspr_tx_bit()
 {
 	if (wspr_symbol_index != WSPR_SYMBOL_COUNT)
 	{
-		if (wspr_symbol_index == 0)   // On first bit enable the tx output.
+		if (wspr_symbol_index == 0)   							// On first bit enable the tx output.
 		{
 			wspr_tx_enable(SI5351_CLK0);
 			wspr_tx_enable(SI5351_CLK1);
@@ -888,7 +915,7 @@ void wspr_tx_enable(si5351_clock clk)
 				wspr_slot_freq[wspr_slot][clk] / 1000000.0, 
 				wspr_slot_band[wspr_slot]);
 
-		si5351.drive_strength(clk, SI5351_DRIVE_8MA); // 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
+		si5351.drive_strength(clk, SI5351_DRIVE_8MA); 			// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
 		si5351.set_clock_pwr(clk, 1);
 		si5351.output_enable(clk, 1);
 	}
@@ -919,7 +946,7 @@ void ssd1306_main_window()
 		return;
 	}
 
-	gettimeofday(&tv, NULL);			// Get the current time in usec
+	gettimeofday(&tv, NULL);									// Get the current time in usec
 
 	ssd1306_background();
 
@@ -1041,6 +1068,95 @@ void ssd1306_background()
 	display.print(buf_count);
 }
 
+void ssd1306_wifi_page()
+{
+	PRINTF_P("Connected to %s (IP:%s/%s, GW:%s, RSSI %d)\n"
+		, WiFi.SSID().c_str()
+		, WiFi.localIP().toString().c_str()							// Send the IP address of the ESP8266 to the computer
+		, WiFi.subnetMask().toString().c_str()
+		, WiFi.gatewayIP().toString().c_str()
+		, WiFi.RSSI());
+
+	ssd1306_background();
+	display.setTextSize(1);
+
+	display.setCursor(6, 16+10*0);
+ 	display.printf("SSID:%s", WiFi.SSID().c_str());
+	display.setCursor(6, 16+10*1);
+ 	display.printf("  IP:%s", WiFi.localIP().toString().c_str());
+	display.setCursor(6, 16+10*2);
+ 	display.printf("RSSI:%d", WiFi.RSSI());
+
+	ssd1306_display_on();
+	display.display();
+
+	delay(2000);
+}
+
+// PSTR("%lu;%s;%ld;%S")
+// Note that the %S has a capital S because header_1 is in PROGMEM.
+void ssd1306_printf_P(int wait, PGM_P format, ...)
+{
+	char buffer[100];
+	va_list arg;
+
+	va_start (arg, format);
+	vsnprintf(buffer, sizeof(buffer), (const char *)format, arg);
+	va_end (arg);
+
+	char *txt1,*txt2,*txt3;
+	txt1 = buffer;
+	txt2 = strchr(txt1, '\n');
+	if (txt2 != NULL) *txt2++ = '\0';
+	txt3 = strchr(txt2, '\n');
+	if (txt3 != NULL) *txt3++ = '\0';
+
+	display.invertDisplay(false);
+	ssd1306_background();
+
+	display.setTextSize(1);
+	if (txt1 != NULL)
+	{
+		uint16_t  w = getFontStringWidth(txt1);
+		display.setCursor((display.width() - w) / 2 , 16);
+		display.print(txt1);
+	}
+	if (txt2 != NULL)
+	{
+		uint16_t  w = getFontStringWidth(txt2);
+		display.setCursor((display.width() - w) / 2 , 16+12);	// 16+16
+		display.print(txt2);
+	}
+	if (txt3 != NULL)
+	{
+		uint16_t  w = getFontStringWidth(txt3);
+		display.setCursor((display.width() - w) / 2 , 16+12+12);
+		display.print(txt3);
+	}
+
+	if (WiFi.SSID().length() > 0)
+	{
+		String ssid("SSID:"); ssid += WiFi.SSID();
+		uint16_t  w = getFontStringWidth(ssid);
+		display.setCursor((display.width() - w) / 2 , 52);
+		display.print(ssid);
+	}
+
+	ssd1306_display_on();
+	display.display();
+
+#ifdef DEBUG
+	PRINTF_P("ssd1306_text[%d]: ", wait);
+	if (txt1 != NULL)	PRINT(txt1);
+	if (txt2 != NULL) {	PRINT_P(" / "); PRINT(txt2); }
+	if (txt3 != NULL) {	PRINT_P(" / "); PRINT(txt3); }
+	PRINT_P("\n");
+#endif
+
+	if (wait >= 0)
+		delay(wait);
+}
+
 void ssd1306_display_on()
 {
 	PRINTF_P("Display On for %dsec.\n", value_ms_display_auto_off/1000);
@@ -1065,67 +1181,4 @@ uint16_t getFontStringWidth(const String& str)
 	uint16_t  w, h;
 	display.getTextBounds(str, 0, 0, &x, &y, &w, &h);
 	return w;
-}
-
-void ssd1306_text(uint16_t delay_ms, const char* txt1, const char* txt2)
-{
-	ssd1306_background();
-
-	display.setTextSize(1);
-	if (txt1 != NULL)
-	{
-		uint16_t  w = getFontStringWidth(txt1);
-		display.setCursor((display.width() - w) / 2 , 16);
-		display.print(txt1);
-	}
-	if (txt2 != NULL)
-	{
-		uint16_t  w = getFontStringWidth(txt2);
-		display.setCursor((display.width() - w) / 2 , 16+16);
-		display.print(txt2);
-	}
-
-	if (WiFi.SSID().length() > 0)
-	{
-		String ssid("SSID:"); ssid += WiFi.SSID();
-		uint16_t  w = getFontStringWidth(ssid);
-		display.setCursor((display.width() - w) / 2 , 52);
-		display.print(ssid);
-	}
-
-	ssd1306_display_on();
-	display.display();
-
-	PRINTF_P("ssd1306_text[%d]: ", delay_ms);
-	if (txt1 != NULL)	PRINT(txt1);
-	if (txt2 != NULL) {	PRINT_P(" / "); PRINT(txt2); }
-	PRINT_P("\n");
-
-	if (delay_ms >= 0)
-		delay(delay_ms);
-}
-
-void ssd1306_wifi_page()
-{
-	PRINTF_P("Connected to %s (IP:%s/%s, GW:%s, RSSI %d)\n"
-		, WiFi.SSID().c_str()
-		, WiFi.localIP().toString().c_str()				// Send the IP address of the ESP8266 to the computer
-		, WiFi.subnetMask().toString().c_str()
-		, WiFi.gatewayIP().toString().c_str()
-		, WiFi.RSSI());
-
-	ssd1306_background();
-	display.setTextSize(1);
-
-	display.setCursor(6, 16+10*0);
- 	display.printf("SSID:%s", WiFi.SSID().c_str());
-	display.setCursor(6, 16+10*1);
- 	display.printf("  IP:%s", WiFi.localIP().toString().c_str());
-	display.setCursor(6, 16+10*2);
- 	display.printf("RSSI:%d", WiFi.RSSI());
-
-	ssd1306_display_on();
-	display.display();
-
-	delay(2000);
 }
