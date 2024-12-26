@@ -7,24 +7,11 @@
 //					- Set Debug port on Serial1
 //          - Erease Flash: "All Flash contents"
 //
-// Using library ESP8266WiFi at version 1.0
-// Using library DNSServer at version 1.1.1
-// Using library SPI at version 1.0
-// Using library Wire at version 1.0
-// Using library Adafruit_GFX_Library at version 1.11.9
-// Using library Adafruit_BusIO at version 1.15.0
-// Using library Adafruit_SSD1306_Wemos_Mini_OLED at version 1.1.2
-// Using library Etherkit_Si5351 at version 2.1.4
-// Using library Etherkit_JTEncode at version 1.3.1
-// Using library OneWire at version 2.3.7
-// Using library DallasTemperature at version 3.9.0
-// Using library ESP8266mDNS at version 1.2
-// Using library ArduinoOTA at version 1.0
-//
+// *********************************************
 
 #define		VERSION		"V3.1"
 
-#define	LOC_PE0FKO_40m
+//#define	LOC_PE0FKO_40m
 //#define	LOC_PE0FKO_40m_1
 //#define	LOC_PA_PE0FKO
 //#define	LOC_PE0FKO_NR
@@ -32,15 +19,12 @@
 //#define	LOC_LA_MOTHE_30m
 //#define	LOC_LA_MOTHE_20m
 
-#define		FEATURE_OTA
-#define		FEATURE_mDNS
-#define		FEATURE_CARRIER
-//  #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_17m + 100)
-  #define   CARRIER_FREQUENCY      (WSPR_TX_FREQ_40m + 100)
-//  #define   CARRIER_FREQUENCY      (10000000UL)
-  #define   CARRIER_SI5351_CLK     SI5351_CLK0
+// Defined in PlatformIO .ini file
+//#define		FEATURE_OTA
+//#define		FEATURE_mDNS
+//#define		FEATURE_CARRIER
 //#define		FEATURE_1H_FAST_TX
-#define		FEATURE_PRINT_TIMESLOT
+//#define		FEATURE_PRINT_TIMESLOT
 //#define		FEATURE_PRINT_WSPR_SIMBOLS
 //#define		FEATURE_CHECK_TIMING
 
@@ -82,6 +66,7 @@
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
+	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
 #elif defined LOC_LA_MOTHE_40m
 	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
@@ -91,6 +76,7 @@
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
+	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
 #elif defined LOC_LA_MOTHE_30m
 	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
@@ -100,6 +86,7 @@
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
+	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
 #elif defined LOC_LA_MOTHE_20m
 	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
 	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
@@ -109,6 +96,7 @@
 	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
 	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_none
 	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_none
+	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
 #else
   #error    "Specify the Location..."
 #endif
@@ -131,6 +119,11 @@
 #define		WSPR_SLOTS_MAX		30			// 30 times 2min slots in a hour
 #define		BUTTON_INPUT		D6			// GPIO 12, INPUT_PULLUP
 #define		ONE_WIRE_BUS		D7			// GPIO 13
+
+//#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_17m + 100)
+//#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_40m + 100)
+#define		CARRIER_FREQUENCY		10000000UL
+#define		CARRIER_SI5351_CLK		SI5351_CLK0
 
 // *********************************************
 #include <stdlib.h>
@@ -235,7 +228,8 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 					float	TempCorrection;			// DS18B20 temp correction, at 18/08/2022
 				} ESPChipInfo[] 
 =
-{	{ 0x7b06f7, 0,			0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
+//{	{ 0x7b06f7, 0,			0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO, Old D1 board
+{	{ 0x7b1372, 0,			0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
 ,	{ 0x62df37, 620+142,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
 ,	{ -1, 		0,			0X5555,		1*60000, "WsprESP",  0.0 }	// Default
 };
@@ -308,13 +302,42 @@ void make_slot_plan(bool setup)
 #endif
 
 #if 1
-	//	Even slot 40m, odd 20m, PA3EDR testing.
+	// 241226:	Three slot tx.	40m, 80m, 20m.
+	{
+		for (int i = 0; i < WSPR_SLOTS_MAX;  i++)
+		{
+			wspr_slot_tx[i]	= WSPR_TX_TYPE_2;
+
+			switch( i % 3 ) {
+				case 0:
+				wspr_slot_band[i]	= 50;
+				wspr_slot_freq[i][WSPR_OUT_CLK]	= WSPR_TX_FREQ_40m;
+				break;
+				case 1:
+				wspr_slot_band[i]	= 100;
+				wspr_slot_freq[i][WSPR_OUT_CLK]	= WSPR_TX_FREQ_80m;
+				break;
+				case 2:
+				wspr_slot_band[i]	= 150;
+				wspr_slot_freq[i][WSPR_OUT_CLK]	= WSPR_TX_FREQ_20m;
+				break;
+			}
+		}
+
+		// TX ones every hour the 6 char QTH locator every band.
+		wspr_slot_tx[0]		= WSPR_TX_TYPE_3;
+		wspr_slot_tx[1]		= WSPR_TX_TYPE_3;
+		wspr_slot_tx[2]		= WSPR_TX_TYPE_3;
+	}
+#elif 0
+	//	Even slot 40m, odd 20m.
 	{
 //		int bnd = 25;					// Use audio band 25--175 Hz
 		for (int i = 0; i < WSPR_SLOTS_MAX; 
 				i += 1)
 		{
-			wspr_slot_band[i]		= 50;
+			wspr_slot_band[i]		= (i & 1) == 1 ? 150 : 50;
+//			wspr_slot_band[i]		= (i & 2) == 2 ? 150 : 50;
 //			wspr_slot_band[i]		= bnd;
 //			bnd += 5;
 //			if (bnd >= 175) bnd = 25; 	// Step size if 5 Hz
@@ -358,14 +381,12 @@ void make_slot_plan(bool setup)
 		wspr_slot_tx[s2]		= WSPR_TX_TYPE_2;	// Comp, no locator
 		wspr_slot_tx[s3]		= WSPR_TX_TYPE_2;	// Comp, no locator
 
-//		wspr_slot_freq[s0][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
-		wspr_slot_freq[s1][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
-		wspr_slot_freq[s2][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
-		wspr_slot_freq[s3][WSPR_OUT_CLK]	= WSPR_TX_FREQ_30m;
+//		wspr_slot_freq[s0][WSPR_OUT_CLK]	= WSPR_TX_FREQ_15m;
+		wspr_slot_freq[s1][WSPR_OUT_CLK]	= WSPR_TX_FREQ_15m;
+		wspr_slot_freq[s2][WSPR_OUT_CLK]	= WSPR_TX_FREQ_15m;
+		wspr_slot_freq[s3][WSPR_OUT_CLK]	= WSPR_TX_FREQ_15m;
 	}
 #endif
-
-
 
 
 #ifdef FEATURE_PRINT_TIMESLOT
@@ -380,7 +401,7 @@ void make_slot_plan(bool setup)
 
 uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 {
-    return sntp_update_delay;
+	return sntp_update_delay;
 }
 
 //---------------------------------------------------------------------------------
@@ -418,14 +439,16 @@ void setup()
 	PRINT_P ("\n=== PE0FKO, TX WSPR temperature coded\n");
 	PRINT_P ("=== Version: " VERSION ", Build at: " __DATE__ " " __TIME__ "\n");
 	PRINTF_P("=== Config: " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", HAM_POWER);
+	PRINTF_P("=== ChipId: 0x%x, Host:%s, TempCor=%f\n", chipid, CHIP_HOSTNAME.c_str(), CHIP_TEMP_CORRECTION);
 
 	PRINTF_P("Sizeof int      : %d\n", sizeof(int));
 	PRINTF_P("Sizeof long     : %d\n", sizeof(long));
 	PRINTF_P("Sizeof long long: %d\n", sizeof(long long));
 	PRINTF_P("value_us_wspr_bit: %ld\n", value_us_wspr_bit);
 
-	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, 0x3C);
+	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, SCREEN_ADDRESS);
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
+
 //	display.setRotation(2);						// Display upside down...
 
 	pinMode(BUTTON_INPUT, INPUT_PULLUP);		// Button for display on/off
@@ -897,7 +920,7 @@ void wspr_tx_bit()
 void wspr_tx_freq(si5351_clock clk)
 {
 	if (wspr_slot_tx[wspr_slot] != WSPR_TX_NONE && 
-	    wspr_slot_freq[wspr_slot][clk] != 0)
+		wspr_slot_freq[wspr_slot][clk] != 0)
 	{
 		uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[wspr_slot][clk] + wspr_slot_band[wspr_slot]);
 		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) )
@@ -908,7 +931,7 @@ void wspr_tx_freq(si5351_clock clk)
 void wspr_tx_enable(si5351_clock clk)
 {
 	if (wspr_slot_tx[wspr_slot] != WSPR_TX_NONE && 
-	    wspr_slot_freq[wspr_slot][clk] != 0)
+		wspr_slot_freq[wspr_slot][clk] != 0)
 	{
 		PRINTF_P("TX WSPR start %d: slot %d, freq %.6fMHz + %dHz\n", 
 				clk, wspr_slot, 
@@ -1145,7 +1168,7 @@ void ssd1306_printf_P(int wait, PGM_P format, ...)
 	ssd1306_display_on();
 	display.display();
 
-#ifdef DEBUG
+#ifdef DEBUG_ESP_PORT
 	PRINTF_P("ssd1306_text[%d]: ", wait);
 	if (txt1 != NULL)	PRINT(txt1);
 	if (txt2 != NULL) {	PRINT_P(" / "); PRINT(txt2); }
