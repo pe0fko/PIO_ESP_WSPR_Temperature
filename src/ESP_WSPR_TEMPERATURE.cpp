@@ -229,7 +229,7 @@ static	struct {	int 	ChipId;					// ESP Chip ID
 				} ESPChipInfo[] 
 =
 //{	{ 0x7b06f7, 0,			0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO, Old D1 board
-{	{ 0x7b1372, 0,			0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
+{	{ 0x7b1372, -195,		0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
 ,	{ 0x62df37, 620+142,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
 ,	{ -1, 		0,			0X5555,		1*60000, "WsprESP",  0.0 }	// Default
 };
@@ -482,7 +482,7 @@ void setup()
 	ArduinoOTA.setHostname((const char *)HostName.c_str());
 	ArduinoOTA.onStart([]() { ssd1306_printf_P(100, PSTR("OTA update\nRunning")); });
 	ArduinoOTA.onEnd([]()   { ssd1306_printf_P(100, PSTR("OTA update\nReboot")); ESP.restart(); });
-	ArduinoOTA.setPassword("pe0fko");
+	ArduinoOTA.setPassword(OtaPassword);
 	ArduinoOTA.begin();
 #endif
 
