@@ -1053,9 +1053,13 @@ void ssd1306_main_window()
 
 	// Display the used freq bands
 	sprintf(buffer, "%s/%s/%s"
-			, wspr_slot_freq[ns][0] == 0 ? "x" : String(300/(wspr_slot_freq[ns][0]/1000000)).c_str()
-			, wspr_slot_freq[ns][1] == 0 ? "x" : String(300/(wspr_slot_freq[ns][1]/1000000)).c_str()
-			, wspr_slot_freq[ns][2] == 0 ? "x" : String(300/(wspr_slot_freq[ns][2]/1000000)).c_str()
+			, wspr_slot_freq[ns][0] == 0 ? "x" : String(wspr_slot_freq[ns][0]/1000000).c_str()
+			, wspr_slot_freq[ns][1] == 0 ? "x" : String(wspr_slot_freq[ns][1]/1000000).c_str()
+			, wspr_slot_freq[ns][2] == 0 ? "x" : String(wspr_slot_freq[ns][2]/1000000).c_str()
+
+//			, wspr_slot_freq[ns][0] == 0 ? "x" : String(300/(wspr_slot_freq[ns][0]/1000000)).c_str()
+//			, wspr_slot_freq[ns][1] == 0 ? "x" : String(300/(wspr_slot_freq[ns][1]/1000000)).c_str()
+//			, wspr_slot_freq[ns][2] == 0 ? "x" : String(300/(wspr_slot_freq[ns][2]/1000000)).c_str()
 			);
 
 	display.getTextBounds(buffer, 0, 0, &x, &y, &w, &h);
