@@ -954,9 +954,6 @@ void ssd1306_main_window()
 {
 	struct timeval	tv;
 	char			buffer[40];
-	struct tm*		timeinfo;
-	int16_t   		x,y;
-	uint16_t  		w,h;
 	int				ns = wspr_slot;	// next slot
 
 
@@ -976,15 +973,15 @@ void ssd1306_main_window()
 	if (ntp_time_sync)
 	{
 		// Get local time
-		timeinfo = localtime (&tv.tv_sec);
+		struct tm* timeinfo = localtime(&tv.tv_sec);
 
 		// Disply the actual time
-		strftime (buffer ,sizeof buffer ,"%H:%M:%S", timeinfo);
+		strftime (buffer ,sizeof buffer, "%H:%M:%S", timeinfo);
 		ssd1306_center_string(buffer, 12, 2);
 
 		// Display the actual date and temperature
 		char date[20];
-		strftime (date ,sizeof date ,"%d/%m/%Y", timeinfo);
+		strftime (date ,sizeof date, "%d/%m/%Y", timeinfo);
 		sprintf(buffer, "%s - %.1f", date, temperature_now);
 		ssd1306_center_string(buffer, 32);
 	}
@@ -1039,6 +1036,9 @@ void ssd1306_main_window()
 			, wspr_slot_freq[ns][2] == 0 ? "x" : String(wspr_slot_freq[ns][2]/1000000).c_str()
 			);
 
+	int16_t   		x,y;
+	uint16_t  		w,h;
+
 	display.getTextBounds(buffer, 0, 0, &x, &y, &w, &h);
 	x = display.width() * 1 / 4;
 	x -= w / 2; if (x < 10) x = 10;
@@ -1055,8 +1055,8 @@ void ssd1306_center_string(const char* buffer, uint8_t Y, uint8_t size)
 	uint16_t  h, w;
 
 	display.setTextSize(size);
-	display.getTextBounds(buffer, 0, 0, &x, &y, &w, &h);
-	display.setCursor((display.width() - w) / 2 , Y);
+	display.getTextBounds(buffer, 0, Y, &x, &y, &w, &h);
+	display.setCursor((display.width() - w) / 2, y);
 	display.print(buffer);
 }
 
@@ -1071,7 +1071,6 @@ void ssd1306_background()
 
 	display.setTextSize(1);
 	display.setTextColor(WHITE);
-
 	display.getTextBounds(buf_count, 0, 0, &x, &y, &w, &h);
 
 	display.clearDisplay();
