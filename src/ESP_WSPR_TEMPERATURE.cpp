@@ -168,7 +168,7 @@ Adafruit_SSD1306			display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Si5351						si5351;
 JTEncode					wspr;
 
-static	ESP8266WiFiMulti	wifiMulti;
+//static	ESP8266WiFiMulti	wifiMulti;
 static 	WiFiEventHandler	wifiConnectHandler;						// WiFi connect event handler
 static	WiFiEventHandler	wifiDisconnectHandler;					// WiFi disconnect event handler
 static	String				HostName;
@@ -266,8 +266,8 @@ void		wspr_tx_init(const char* call);
 void		wspr_tx_disable(si5351_clock clk);
 void		wspr_tx_freq(si5351_clock clk);
 void		wspr_tx_enable(si5351_clock clk);
+void		ssd1306_center_string(const char* buffer, uint8_t y, uint8_t size=1);
 void		ssd1306_background();
-uint16_t	getFontStringWidth(const String& str);
 
 //
 // Make a plan to TX in one of the 30 slots (2min inteval in a hour).
@@ -309,15 +309,15 @@ void make_slot_plan(bool setup)
 			wspr_slot_tx[i]	= WSPR_TX_TYPE_2;
 
 			switch( i % 3 ) {
-				case 0:
+			case 0:
 				wspr_slot_band[i]	= 50;
 				wspr_slot_freq[i][WSPR_OUT_CLK]	= WSPR_TX_FREQ_40m;
 				break;
-				case 1:
+			case 1:
 				wspr_slot_band[i]	= 100;
 				wspr_slot_freq[i][WSPR_OUT_CLK]	= WSPR_TX_FREQ_80m;
 				break;
-				case 2:
+			case 2:
 				wspr_slot_band[i]	= 150;
 				wspr_slot_freq[i][WSPR_OUT_CLK]	= WSPR_TX_FREQ_20m;
 				break;
@@ -471,7 +471,7 @@ void setup()
 
 	// Try to startup the WiFi Multi connection with the strongest AP found.
 	for(i = 0; i < WifiApListNumber; i++)
-		wifiMulti.addAP(WifiApList[i].ssid, WifiApList[i].passwd);
+		wifiMulti.addAP(WifiApList[i].ssid, WifiApList[i].passphrase);
 
 #ifdef FEATURE_mDNS
 	init_mdns();						// Init the broadcast DNS server (.local)
@@ -513,10 +513,10 @@ void setup()
 }
 
 
-//void onWifiConnect(const WiFiEventStationModeConnected& ssid)
-//{
-//	PRINTF_P("WiFi connected: SSID %s\n", ssid.ssid.c_str());
-//}
+void onWifiConnect(const WiFiEventStationModeConnected& ssid)
+{
+	PRINTF_P("WiFi connected: SSID %s\n", ssid.ssid.c_str());
+}
 
 void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo)
 {
@@ -975,51 +975,39 @@ void ssd1306_main_window()
 
 	if (ntp_time_sync)
 	{
+		// Get local time
 		timeinfo = localtime (&tv.tv_sec);
-		strftime (buffer ,sizeof buffer ,"%H:%M:%S", timeinfo);
-		display.setTextSize(2);
-		w = getFontStringWidth(buffer);
-		display.setCursor((display.width() - w) / 2 , 12);
-		display.print(buffer);
 
-		strftime (buffer ,sizeof buffer ,"- %d/%m/%Y -", timeinfo);
-		display.setTextSize(1);
-		w = getFontStringWidth(buffer);
-		display.setCursor((display.width() - w) / 2 , 32);
-		display.print(buffer);
+		// Disply the actual time
+		strftime (buffer ,sizeof buffer ,"%H:%M:%S", timeinfo);
+		ssd1306_center_string(buffer, 12, 2);
+
+		// Display the actual date and temperature
+		char date[20];
+		strftime (date ,sizeof date ,"%d/%m/%Y", timeinfo);
+		sprintf(buffer, "%s - %.1f", date, temperature_now);
+		ssd1306_center_string(buffer, 32);
 	}
 	else
 	{
 		if (WiFi.status() != WL_CONNECTED)
-			strcpy(buffer, "WiFi disconnect");
+			ssd1306_center_string("WiFi disconnect", 16+2);
 		else
-			strcpy(buffer, "sNTP Waiting");
-
-		display.setTextSize(1);
-		w = getFontStringWidth(buffer);
-		display.setCursor((display.width() - w) / 2 , 16+2);
-		display.print(buffer);
-
-		strcpy(buffer, "- Syncing -");
-
-		display.setTextSize(1);
-		w = getFontStringWidth(buffer);
-		display.setCursor((display.width() - w) / 2 , 32-2);
-		display.print(buffer);
+			ssd1306_center_string("sNTP Waiting", 16+2);
+		ssd1306_center_string("- Syncing -", 32-2);
 	}
 
+	// Display the WSPR Call, Locator and Power in dBm
 	sprintf(buffer, "%s/%s/%ddBm", HAM_CALL, HAM_LOCATOR, HAM_POWER);
-	w = getFontStringWidth(buffer);
-	display.setCursor((display.width()- w)/2, display.height()-10);
-	display.print(buffer);
+	ssd1306_center_string(buffer, SCREEN_HEIGHT-10);
 
 	if (wspr_symbol_index != 0)
 	{
 		uint16_t B,E;
 		B = 4;
 		E = B + tv.tv_sec % 120;
-		display.drawLine(B, display.height()-14, E, display.height()-14, WHITE);
-		display.drawLine(B, display.height()-16, E, display.height()-16, WHITE);
+		display.drawLine(B, display.height()-14-4, E, display.height()-14-4, WHITE);
+		display.drawLine(B, display.height()-16-4, E, display.height()-16-4, WHITE);
 
 		// At TX invert the display collors
 		display.invertDisplay(true);
@@ -1036,16 +1024,9 @@ void ssd1306_main_window()
 		if (w < 3600)
 		{
 			// Display time next tx
-			sprintf(buffer, "TX %02d:%02d", w/60, w%60);
-			display.setCursor(14, display.height()-20);
-			display.print(buffer);
+			sprintf(buffer, "TX at %02d:%02d", w/60, w%60);
+			ssd1306_center_string(buffer, display.height()-20);
 		}
-
-		// The actual temperature used
-		sprintf(buffer, "%.1f", temperature_now);
-		w = getFontStringWidth(buffer);
-		display.setCursor(display.width() - 14 - w, display.height()-20);
-		display.print(buffer);
 
 		// Non TX normal display
 		display.invertDisplay(false);
@@ -1056,10 +1037,6 @@ void ssd1306_main_window()
 			, wspr_slot_freq[ns][0] == 0 ? "x" : String(wspr_slot_freq[ns][0]/1000000).c_str()
 			, wspr_slot_freq[ns][1] == 0 ? "x" : String(wspr_slot_freq[ns][1]/1000000).c_str()
 			, wspr_slot_freq[ns][2] == 0 ? "x" : String(wspr_slot_freq[ns][2]/1000000).c_str()
-
-//			, wspr_slot_freq[ns][0] == 0 ? "x" : String(300/(wspr_slot_freq[ns][0]/1000000)).c_str()
-//			, wspr_slot_freq[ns][1] == 0 ? "x" : String(300/(wspr_slot_freq[ns][1]/1000000)).c_str()
-//			, wspr_slot_freq[ns][2] == 0 ? "x" : String(300/(wspr_slot_freq[ns][2]/1000000)).c_str()
 			);
 
 	display.getTextBounds(buffer, 0, 0, &x, &y, &w, &h);
@@ -1071,6 +1048,18 @@ void ssd1306_main_window()
 
 	display.display();
 }
+
+void ssd1306_center_string(const char* buffer, uint8_t Y, uint8_t size)
+{
+	int16_t   x, y;
+	uint16_t  h, w;
+
+	display.setTextSize(size);
+	display.getTextBounds(buffer, 0, 0, &x, &y, &w, &h);
+	display.setCursor((display.width() - w) / 2 , Y);
+	display.print(buffer);
+}
+
 
 void ssd1306_background()
 {
@@ -1141,32 +1130,24 @@ void ssd1306_printf_P(int wait, PGM_P format, ...)
 	display.invertDisplay(false);
 	ssd1306_background();
 
-	display.setTextSize(1);
+//	display.setTextSize(1);
 	if (txt1 != NULL)
 	{
-		uint16_t  w = getFontStringWidth(txt1);
-		display.setCursor((display.width() - w) / 2 , 16);
-		display.print(txt1);
+		ssd1306_center_string(txt1, 16);
 	}
 	if (txt2 != NULL)
 	{
-		uint16_t  w = getFontStringWidth(txt2);
-		display.setCursor((display.width() - w) / 2 , 16+12);	// 16+16
-		display.print(txt2);
+		ssd1306_center_string(txt2, 16+12);
 	}
 	if (txt3 != NULL)
 	{
-		uint16_t  w = getFontStringWidth(txt3);
-		display.setCursor((display.width() - w) / 2 , 16+12+12);
-		display.print(txt3);
+		ssd1306_center_string(txt3, 16+12+12);
 	}
 
 	if (WiFi.SSID().length() > 0)
 	{
 		String ssid("SSID:"); ssid += WiFi.SSID();
-		uint16_t  w = getFontStringWidth(ssid);
-		display.setCursor((display.width() - w) / 2 , 52);
-		display.print(ssid);
+		ssd1306_center_string(ssid.c_str(), 16+12+12+12);
 	}
 
 	ssd1306_display_on();
@@ -1200,12 +1181,4 @@ void ssd1306_display_off()
 	display.invertDisplay(false);
 	display.display();
 	display_status = DISPLAY_OFF;
-}
-
-uint16_t getFontStringWidth(const String& str)
-{
-	int16_t   x, y;
-	uint16_t  w, h;
-	display.getTextBounds(str, 0, 0, &x, &y, &w, &h);
-	return w;
 }
