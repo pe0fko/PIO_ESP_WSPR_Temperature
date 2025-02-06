@@ -9,24 +9,7 @@
 //
 // *********************************************
 
-#define		VERSION		"V3.1"
-
-//#define	LOC_PE0FKO_40m
-//#define	LOC_PE0FKO_40m_1
-//#define	LOC_PA_PE0FKO
-//#define	LOC_PE0FKO_NR
-//#define	LOC_LA_MOTHE_40m
-//#define	LOC_LA_MOTHE_30m
-//#define	LOC_LA_MOTHE_20m
-
-// Defined in PlatformIO .ini file
-//#define		FEATURE_OTA
-//#define		FEATURE_mDNS
-//#define		FEATURE_CARRIER
-//#define		FEATURE_1H_FAST_TX
-//#define		FEATURE_PRINT_TIMESLOT
-//#define		FEATURE_PRINT_WSPR_SIMBOLS
-//#define		FEATURE_CHECK_TIMING
+#define		VERSION		"V3.2"
 
 // WSPR Type 1:
 // The standard message is <callsign> + <4 character locator> + <dBm transmit power>;
@@ -164,54 +147,52 @@
 
 #define OLED_RESET     -1 	// Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C	///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+
 Adafruit_SSD1306			display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Si5351						si5351;
 JTEncode					wspr;
 
-//static	ESP8266WiFiMulti	wifiMulti;
-static 	WiFiEventHandler	wifiConnectHandler;						// WiFi connect event handler
-static	WiFiEventHandler	wifiDisconnectHandler;					// WiFi disconnect event handler
-static	String				HostName;
-static	OneWire				oneWire(ONE_WIRE_BUS);					// Temp sensor
-static	DallasTemperature	sensors(&oneWire);						// Dallas DS18B20
-
-//static	uint8_t				wifi_status_previous	= WL_DISCONNECTED;
+static		WiFiEventHandler	mConnectHandler;
+static		WiFiEventHandler	mDisConnectHandler;
+static		WiFiEventHandler	mGotIpHandler;
+static		String				HostName;
+static		OneWire				oneWire(ONE_WIRE_BUS);					// Temp sensor
+static		DallasTemperature	sensors(&oneWire);						// Dallas DS18B20
 
 //static esp8266::polledTimeout::periodicMs showTimeNow(60000);  	// Checkout
 
-const   uint32_t		value_ms_20ms_loop		= 20;				// 20ms interval check time ntp sec
-static  uint32_t		timer_ms_20ms_loop		= 0;
-const	uint32_t		value_us_wspr_bit		= 8192.0 / 12000.0 * 1000000.0;	 // Delay value for WSPR
-static	uint32_t		timer_us_wspr_bit		= 0;
-const	uint32_t		value_us_one_second		= 1000000UL;		// micro second (us)
-static	uint32_t		timer_us_one_second		= 0;				// micros()
-static	uint32_t		value_ms_display_auto_off;					// Display on time, load per chip
-static	uint32_t		timer_ms_display_auto_off;
-const	uint32_t		value_ms_ntp_faild_reboot= 30 * 60 * 1000;	// 1/2 hour (ntp must be init updated in this time)
-static	uint32_t		timer_ms_ntp_faild_reboot;
-const   uint32_t		value_ms_led_blink_on	= 3141UL;			// 4sec interval blink led
-static  uint32_t		timer_ms_led_blink_on	= 0;
-const   uint32_t		value_ms_led_blink_off	= 3UL;				// 3ms led on
-static  uint32_t		timer_ms_led_blink_off	= 0;
+const		uint32_t			value_ms_20ms_loop		= 20;				// 20ms interval check time ntp sec
+static		uint32_t			timer_ms_20ms_loop		= 0;
+const		uint32_t			value_us_wspr_bit		= 8192.0 / 12000.0 * 1000000.0;	 // Delay value for WSPR
+static		uint32_t			timer_us_wspr_bit		= 0;
+const		uint32_t			value_us_one_second		= 1000000UL;		// micro second (us)
+static		uint32_t			timer_us_one_second		= 0;				// micros()
+static		uint32_t			value_ms_display_auto_off;					// Display on time, load per chip
+static		uint32_t			timer_ms_display_auto_off;
+const		uint32_t			value_ms_ntp_faild_reboot= 30 * 60 * 1000;	// 1/2 hour (ntp must be init updated in this time)
+static		uint32_t			timer_ms_ntp_faild_reboot;
+const		uint32_t			value_ms_led_blink_on	= 3141UL;			// 4sec interval blink led
+static		uint32_t			timer_ms_led_blink_on	= 0;
+const		uint32_t			value_ms_led_blink_off	= 3UL;				// 3ms led on
+static		uint32_t			timer_ms_led_blink_off	= 0;
+const		uint32_t			sntp_update_delay		= 3600 * 1000UL;	// NTP update every 1h
+volatile	bool				ntp_time_sync_first		= false;			// First time, no Unix Epoch
+volatile	bool				ntp_time_sync			= false;
+static		float				temperature_now			= 0.0;
+static		uint8_t				switchStatusLast		= HIGH;				// last status hardware switch
+static		enum { DISPLAY_OFF,	DISPLAY_ON }	display_status;
 
-const	uint32_t		sntp_update_delay		= 3600 * 1000UL;	// NTP update every 1h
-volatile bool			ntp_time_sync_first		= false;			// First time, no Unix Epoch
-volatile bool			ntp_time_sync			= false;
-static	float			temperature_now			= 0.0;
-static  uint8_t			switchStatusLast		= HIGH;				// last status hardware switch
-static	enum { DISPLAY_OFF,	DISPLAY_ON } display_status;
+static		uint8_t				wspr_symbols[WSPR_SYMBOL_COUNT];
+static		uint32_t			wspr_symbol_index		= 0;
+static		uint32_t			wspr_tx_counter        	= 0;
 
-static	uint8_t			wspr_symbols[WSPR_SYMBOL_COUNT];
-static	uint32_t		wspr_symbol_index		= 0;
-static	uint32_t		wspr_tx_counter        	= 0;
+static		uint32_t		wspr_slot;									// Slot in the hour, 0..29
+static		enum { WSPR_TX_NONE, WSPR_TX_TYPE_1, WSPR_TX_TYPE_2, WSPR_TX_TYPE_3 }
+								wspr_slot_tx[WSPR_SLOTS_MAX];				// 0=None, 1="CALL", 2="P/CALL/S", 3="<P/CALL/S>"
+static		uint32_t			wspr_slot_band[WSPR_SLOTS_MAX];				// Band freqency, 0 .. 200 Hz
+static		uint32_t			wspr_slot_freq[WSPR_SLOTS_MAX][3];			// TX frequency for every CLK output (0..2)
 
-static	uint32_t		wspr_slot;									// Slot in the hour, 0..29
-static	enum { WSPR_TX_NONE, WSPR_TX_TYPE_1, WSPR_TX_TYPE_2, WSPR_TX_TYPE_3 }
-						wspr_slot_tx[WSPR_SLOTS_MAX];				// 0=None, 1="CALL", 2="P/CALL/S", 3="<P/CALL/S>"
-static	uint32_t		wspr_slot_band[WSPR_SLOTS_MAX];				// Band freqency, 0 .. 200 Hz
-static	uint32_t		wspr_slot_freq[WSPR_SLOTS_MAX][3];			// TX frequency for every CLK output (0..2)
-
-const	uint32_t		wspr_free_second		= 8192.0 / 12000.0 * WSPR_SYMBOL_COUNT + 1.0;
+const		uint32_t			wspr_free_second		= 8192.0 / 12000.0 * WSPR_SYMBOL_COUNT + 1.0;
 
 const	int32_t      	wspr_sym_freq[4] =
 {	static_cast<uint32_t> ( 0.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
@@ -220,25 +201,19 @@ const	int32_t      	wspr_sym_freq[4] =
 ,	static_cast<uint32_t> ( 3.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
 };
 
-static	struct {	int 	ChipId;					// ESP Chip ID
-					int 	FreqCorrection;			// Si5351 frequency correction, PPB
-					int 	RandomSeed;				// Daily pseudo random number, freq
-					int		DisplayAutoOff;			// Switch display off timeout
-					String	Hostname;				// mDNS & OTA hostname
-					float	TempCorrection;			// DS18B20 temp correction, at 18/08/2022
+static		uint32				chipIdIndex				= 0;
+static	struct {	uint32_t	ChipId;					// ESP Chip ID
+					int32_t 	FreqCorrection;			// Si5351 frequency correction, PPB
+					uint32_t	RandomSeed;				// Daily pseudo random number, freq
+					uint32_t	DisplayAutoOff;			// Switch display off timeout
+					String		Hostname;				// mDNS & OTA hostname
+					float		TempCorrection;			// DS18B20 temp correction, at 18/08/2022
 				} ESPChipInfo[] 
 =
-//{	{ 0x7b06f7, 0,			0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO, Old D1 board
-{	{ 0x7b1372, -195,		0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
-,	{ 0x62df37, 620+142,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
-,	{ -1, 		0,			0X5555,		1*60000, "WsprESP",  0.0 }	// Default
+{	{ 0x007b1372, -195,		0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
+,	{ 0x0062df37, 620+142,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
+,	{ 0xffffffff,	0,			0X5555,		1*60000, "WsprESP",  0.0 }	// Default
 };
-
-static		int		CHIP_FREQ_CORRECTION;
-static		int		CHIP_RANDOM_SEED;
-static		int		CHIP_DISPLAY_AUTO_OFF;;
-static		String	CHIP_HOSTNAME;
-static		float	CHIP_TEMP_CORRECTION;
 
 // Forward reference
 void		ReadTemperature();
@@ -247,8 +222,11 @@ void		ssd1306_display_off();
 void		ssd1306_text(uint16_t delay_ms, const char* txt1, const char* txt2=NULL);
 void		ssd1306_printf_P(int wait, PGM_P formatP, ...);
 void		ssd1306_wifi_page();
-void		onWifiConnect(const WiFiEventStationModeGotIP& ipInfo);
+
+void		onWifiConnect(const WiFiEventStationModeConnected& ssid);
+void		onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo);
 void		onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo);
+
 static void	init_mdns();
 static void	init_si5351();
 bool		si5351_ready();
@@ -399,36 +377,24 @@ void make_slot_plan(bool setup)
 #endif
 }
 
-uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
-{
-	return sntp_update_delay;
-}
-
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....
 //---------------------------------------------------------------------------------
 void setup()
 {
 	// Find the ESP chip-id specific data.
-	int i = 0, chipid = ESP.getChipId();
-	while(true)
-	{
-		CHIP_FREQ_CORRECTION 	= ESPChipInfo[i].FreqCorrection;
-		CHIP_RANDOM_SEED     	= ESPChipInfo[i].RandomSeed;
-		CHIP_DISPLAY_AUTO_OFF	= ESPChipInfo[i].DisplayAutoOff;
-		CHIP_HOSTNAME			= ESPChipInfo[i].Hostname;
-		CHIP_TEMP_CORRECTION	= ESPChipInfo[i].TempCorrection;
-		if (ESPChipInfo[i].ChipId == chipid || ESPChipInfo[i].ChipId == -1) break;
-		i++;
-	}
-	randomSeed(CHIP_RANDOM_SEED);
-	value_ms_display_auto_off = CHIP_DISPLAY_AUTO_OFF;
-	HostName = CHIP_HOSTNAME;
+	chipIdIndex = 0;
+	while (ESPChipInfo[chipIdIndex].ChipId != ESP.getChipId() && ESPChipInfo[chipIdIndex].ChipId != 0xffffffff)
+		chipIdIndex++;
+
+	randomSeed(ESPChipInfo[chipIdIndex].RandomSeed);
+	value_ms_display_auto_off = ESPChipInfo[chipIdIndex].DisplayAutoOff;
+	HostName = ESPChipInfo[chipIdIndex].Hostname;
 
 	ntp_time_sync_first = false;
 	ntp_time_sync = false;
 
-	Serial.begin(115200);				// 115200
+	Serial.begin(115200);
 	Serial.setTimeout(2000);
 	while(!Serial) yield();
 #ifdef DEBUG_ESP_PORT
@@ -439,14 +405,16 @@ void setup()
 	PRINT_P ("\n=== PE0FKO, TX WSPR temperature coded\n");
 	PRINT_P ("=== Version: " VERSION ", Build at: " __DATE__ " " __TIME__ "\n");
 	PRINTF_P("=== Config: " HAM_PREFIX HAM_CALL HAM_SUFFIX " - " HAM_LOCATOR " - %ddBm\n", HAM_POWER);
-	PRINTF_P("=== ChipId: 0x%x, Host:%s, TempCor=%f\n", chipid, CHIP_HOSTNAME.c_str(), CHIP_TEMP_CORRECTION);
+	PRINTF_P("=== ChipId: 0x%x, Host:%s, FreqCor=%d, TempCor=%f\n", 
+			ESP.getChipId(),
+			ESPChipInfo[chipIdIndex].Hostname.c_str(), 
+			ESPChipInfo[chipIdIndex].FreqCorrection,
+			ESPChipInfo[chipIdIndex].TempCorrection
+	);
 
-	PRINTF_P("Sizeof int      : %d\n", sizeof(int));
-	PRINTF_P("Sizeof long     : %d\n", sizeof(long));
-	PRINTF_P("Sizeof long long: %d\n", sizeof(long long));
 	PRINTF_P("value_us_wspr_bit: %ld\n", value_us_wspr_bit);
-
 	PRINTF_P("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, SCREEN_ADDRESS);
+
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 
 //	display.setRotation(2);						// Display upside down...
@@ -465,12 +433,13 @@ void setup()
 	WiFi.setAutoReconnect(true);				// Keep WiFi connected
 
 	// Register WiFi event handlers
-//	WiFi.onEvent(onWifiEvent);
-	wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
-	wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
+	mConnectHandler		= WiFi.onStationModeConnected(onWifiConnect);
+	mGotIpHandler		= WiFi.onStationModeGotIP(onWiFiGotIP);
+	mDisConnectHandler	= WiFi.onStationModeDisconnected(onWifiDisconnect);
+
 
 	// Try to startup the WiFi Multi connection with the strongest AP found.
-	for(i = 0; i < WifiApListNumber; i++)
+	for(int i = 0; i < WifiApListNumber; i++)
 		wifiMulti.addAP(WifiApList[i].ssid, WifiApList[i].passphrase);
 
 #ifdef FEATURE_mDNS
@@ -512,56 +481,57 @@ void setup()
 	ssd1306_main_window();
 }
 
-
 void onWifiConnect(const WiFiEventStationModeConnected& ssid)
 {
-	PRINTF_P("WiFi connected: SSID %s\n", ssid.ssid.c_str());
+	PRINTF_P("WiFi connected: SSID %s, channel %d\n", ssid.ssid.c_str(), ssid.channel);
 }
 
-void onWifiConnect(const WiFiEventStationModeGotIP& ipInfo)
+void onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo)
 {
-	ntp_time_sync = false;
-	settimeofday_cb(sntp_time_is_set);			// Call-back function
-	configTime(MYTZ, "time.google.com","nl.pool.ntp.org");
-	sntp_init();
-
-//	timer_ms_ntp_faild_reboot = millis();
-
-	PRINTF_P("WiFi connected: IP:%s/%s GW:%s\n",
+	PRINTF_P("WiFi IP %s, mask %s, GW:%s\n",
 		ipInfo.ip.toString().c_str(),
 		ipInfo.mask.toString().c_str(),
 		ipInfo.gw.toString().c_str()
-		);
+	);
 
+	ntp_time_sync = false;
+	settimeofday_cb(sntp_time_is_set);			// Call-back function
+	configTime(MYTZ, "time.google.com", "nl.pool.ntp.org");
+
+//	timer_ms_ntp_faild_reboot = millis();
 }
 
 // callback routine - arrive here whenever a successful NTP update has occurred
 void sntp_time_is_set(bool from_sntp)
 {
+	time_t now = time(nullptr);          // get UNIX timestamp
+	PRINT_P("NTP update at: ");
+	PRINT(ctime(&now));
+
 	ntp_time_sync_first = true;		// There is some time, not the Unix Epoch.
 	ntp_time_sync = true;			// and the new time is set
-
-	time_t now = time(nullptr);          // get UNIX timestamp
-	PRINT_P("NTP update done at: ");
-	PRINT(ctime(&now));
 }
 
+uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
+{
+	return sntp_update_delay;
+}
 
 void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 {
+	PRINTF_P("WiFi disconnected from SSID: %s, Reason: %d\n"
+	,	disconnectInfo.ssid.c_str()
+	,	disconnectInfo.reason
+	);
+
 	sntp_stop();
 //	timer_ms_ntp_faild_reboot = millis();
-
-	PRINTF_P("WiFi disconnected from SSID: %s, Reason: %d\n",
-  		disconnectInfo.ssid.c_str(),
-		disconnectInfo.reason
-		);
 }
 
 void ReadTemperature()
 {
 	sensors.requestTemperatures();
-	temperature_now = sensors.getTempCByIndex(0) + CHIP_TEMP_CORRECTION;
+	temperature_now = sensors.getTempCByIndex(0) + ESPChipInfo[chipIdIndex].TempCorrection;
 
 	PRINTF_P("Sensor DS18B20 temperature %.1fºC\n", temperature_now);
 }
@@ -677,8 +647,8 @@ void loop_1s_tick()
 			//   Posible track of (semi) random numbers!
 			if (hour == 23 && slot == 29 && slot_sec == wspr_free_second)
 			{
-				PRINTF_P("Set the const ramdom seed number 0x%08x\n", CHIP_RANDOM_SEED);
-				randomSeed(CHIP_RANDOM_SEED);
+				PRINTF_P("Set the const ramdom seed number 0x%08x\n", ESPChipInfo[chipIdIndex].RandomSeed);
+				randomSeed(ESPChipInfo[chipIdIndex].RandomSeed);
 			}
 
 		}
@@ -808,12 +778,12 @@ void loop_1s_tick_clock(uint8_t slot_sec)
 
 static void init_si5351()
 {
-	PRINTF_P("SI5351 init: xtal:%d, correction:%d\n", SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION);
+	PRINTF_P("SI5351 init: xtal:%d, correction:%d\n", SI5351_XTAL_FREQ, ESPChipInfo[chipIdIndex].FreqCorrection);
 
 	ssd1306_printf_P(200, PSTR("SI5351\nSetup"));
 
 	// TCXO input to xtal pin 1?
-	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, CHIP_FREQ_CORRECTION) )
+	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, ESPChipInfo[chipIdIndex].FreqCorrection) )
 	{
 		// Disable the clock initially...
 		wspr_tx_disable(SI5351_CLK0);
