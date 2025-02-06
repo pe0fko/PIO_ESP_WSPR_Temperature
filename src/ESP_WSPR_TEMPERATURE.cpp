@@ -494,11 +494,10 @@ void onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo)
 		ipInfo.gw.toString().c_str()
 	);
 
-	ntp_time_sync = false;
-	settimeofday_cb(sntp_time_is_set);			// Call-back function
+	settimeofday_cb(sntp_time_is_set);			// Call-back NTP function
 	configTime(MYTZ, "time.google.com", "nl.pool.ntp.org");
 
-//	timer_ms_ntp_faild_reboot = millis();
+	timer_ms_ntp_faild_reboot = millis();		// Keep track of the first received NTP
 }
 
 // callback routine - arrive here whenever a successful NTP update has occurred
@@ -525,7 +524,8 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 	);
 
 	sntp_stop();
-//	timer_ms_ntp_faild_reboot = millis();
+
+	ntp_time_sync = false;
 }
 
 void ReadTemperature()
