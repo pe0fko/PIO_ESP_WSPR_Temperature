@@ -7,7 +7,25 @@
 //					- Set Debug port on Serial1
 //          - Erease Flash: "All Flash contents"
 //
+// WSPR type 1: CALL, LOC4, dBm
+// WSPR type 2: p/CALL/s, dBm
+// WSPR type 3: <p/CALL/s>, LOC6, dBm
+// Update JTEncode.cpp library at line 1000 for 1 char prefix!
+//
 // *********************************************
+// WSPR Type 1:
+// The standard message is <callsign> + <4 character locator> + <dBm transmit power>;
+// for example “K1ABC FN20 37” is a signal from station K1ABC in Maidenhead grid cell
+// “FN20”, sending 37 dBm, or about 5.0 W (legal limit for 630 m).
+// Messages with a compound callsign and/or 6 digit locator use a two-transmission sequence.
+// WSPR Type 2:
+// The <first transmission> carries compound callsign and power level, or standard callsign,
+// 4 digit locator, and power level.
+// WSPR Type 3:
+// The <second transmission> carries a hashed callsign, 6 digit locator, and power level.
+// Add-on prefixes can be up to three alphanumeric characters; add-on suffixes can be a
+// single letter or one or two digits.
+//
 
 #define		VERSION		"V4.0"
 
@@ -33,9 +51,9 @@
 #include <ESP8266mDNS.h>
 #endif
 
-#define	URL_BASE	"http://pe0fko.nl/wspr/id/client_"
-#define	URL_ID		"NL"	// "FR" "NL"
-#define	URL_PAR		"?foo=bar&test=123"
+//#define	URL_BASE	"http://sample.nl/wspr/client_"
+//#define	URL_ID		"NL"
+//#define	URL_PAR		"?foo=bar&test=123"
 
 // JSon static and default config.
 const	char	localConfig[] = R"(
@@ -62,7 +80,7 @@ const	char	localConfig[] = R"(
 ,       "freq_correction":762
 ,       "temp_wspr_band":21
 ,       "temp_wspr_clk":0
-,       "temp_wspr_type":[3,2,2,2]
+,       "temp_wspr_type":[2,2,2]
 ,       "temp_correction":-1.0
 }
 */
@@ -84,59 +102,6 @@ static	struct		config_t
 } config;
 
 
-// WSPR Type 1:
-// The standard message is <callsign> + <4 character locator> + <dBm transmit power>;
-// for example “K1ABC FN20 37” is a signal from station K1ABC in Maidenhead grid cell
-// “FN20”, sending 37 dBm, or about 5.0 W (legal limit for 630 m).
-// Messages with a compound callsign and/or 6 digit locator use a two-transmission sequence.
-// WSPR Type 2:
-// The <first transmission> carries compound callsign and power level, or standard callsign,
-// 4 digit locator, and power level.
-// WSPR Type 3:
-// The <second transmission> carries a hashed callsign, 6 digit locator, and power level.
-// Add-on prefixes can be up to three alphanumeric characters; add-on suffixes can be a
-// single letter or one or two digits.
-
-// WSPR type 1: CALL, LOC4, dBm
-// WSPR type 2: p/CALL/s, dBm
-// WSPR type 3: <p/CALL/s>, LOC6, dBm
-
-// Update JTEncode.cpp library at line 1000 for 1 char prefix!
-#if 1
-#if defined LOC_PE0FKO_40m
-	#define	HAM_PREFIX      ""				// Prefix of the ham call
-	#define	HAM_CALL        "PE0FKO"        // Ham radio call sign
-	#define	HAM_SUFFIX      ""				// Suffix of the ham call
-	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-	#define	HAM_POWER       10				// Power TX in dBm, 9dBm measure
-	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m	// TX freqency Si5351 OSC 0
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_NONE	// TX freqency Si5351 OSC 1
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_NONE	// TX freqency Si5351 OSC 2
-	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
-#elif defined LOC_PA_PE0FKO
-	#define	HAM_PREFIX      "PA/"			// Prefix of the ham call
-	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
-	#define	HAM_SUFFIX      ""				// Suffix of the ham call
-	#define	HAM_LOCATOR     "JO32cd"		// JO32CD 40OJ
-	#define	HAM_POWER       10				// Power TX in dBm
-	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_NONE
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_NONE
-	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
-#elif defined LOC_LA_MOTHE_40m
-	#define	HAM_PREFIX      "F/"			// Prefix of the ham call
-	#define	HAM_CALL        "PE0FKO"		// Ham radio call sign
-	#define	HAM_SUFFIX      ""				// Suffix of the ham call
-	#define	HAM_LOCATOR     "JN13IW"		// JN13IW 08UG
-	#define	HAM_POWER       10				// Power TX in dBm
-	#define	WSPR_TX_FREQ_0	WSPR_TX_FREQ_40m
-	#define	WSPR_TX_FREQ_1	WSPR_TX_FREQ_NONE
-	#define	WSPR_TX_FREQ_2	WSPR_TX_FREQ_NONE
-	#define	WSPR_OUT_CLK	0				// Si5351 Clock output
-#else
-  #error    "Specify the Location..."
-#endif
-#endif
 
 #define	WSPR_TX_FREQ_160m		1838000UL		// 160m  1.838000 -  1.838200
 #define	WSPR_TX_FREQ_80m		3570000UL		// 80m   3.570000 -  3.570200
@@ -159,8 +124,8 @@ static	struct		config_t
 #define		ONE_WIRE_BUS		D7			// GPIO 13
 
 //#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_17m + 100)
-#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_40m + 100)
-//#define		CARRIER_FREQUENCY		10000000UL
+//#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_40m + 100)
+#define		CARRIER_FREQUENCY		10000000UL
 #define		CARRIER_SI5351_CLK		SI5351_CLK0
 
 // *********************************************
@@ -238,20 +203,6 @@ const	int32_t      	wspr_sym_freq[4] =
 ,	static_cast<uint32_t> ( 3.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
 };
 
-static		uint32				chipIdIndex				= 0;
-static	struct {	uint32_t	ChipId;					// ESP Chip ID
-					int32_t 	xxfreq_cal_factor;			// Si5351 frequency correction, PPB
-					uint32_t	xxRandomSeed;				// Daily pseudo random number, freq
-					uint32_t	xxdisplayOff;			// Switch display off timeout
-					const char*	xxHostname;				// mDNS & OTA hostname
-					float		xxTempCorrection;			// DS18B20 temp correction, at 18/08/2022
-				} ESPChipInfo[] 
-=
-{	{ 0x007b1372, -195,		0x19570215,	1*60000, "WsprTX", 	-3.7 }	// Arduino shield, TCXO
-,	{ 0x0062df37, 620+142,	0x19561113, 5*60000, "WsprTST",	-1.0 }	// Breadboard, TCXO
-,	{ 0xffffffff,	0,			0X5555,		1*60000, "WsprESP",  0.0 }	// Default
-};
-
 // Forward reference
 void		ReadTemperature();
 void		ssd1306_display_on();
@@ -284,51 +235,12 @@ void		makeSlotPlan();
 void		makeSlotPlanEmpty();
 void		makeSlotPlanClkN();
 void		makeSlotPlanTemp();
+int			getWsprSlotType(int type);
+uint32_t	wsprBandToFreq(int band);
 void		printSlotPlan();
 void		jsonSetConfig(String json);
 bool		loadWebPage(String& data);
 void		initiateConfig();
-
-
-uint32_t
-wsprBandToFreq(int band)
-{
-	switch(band) {
-		case 0:		break;						// MF      138000 ?		Now it is No Band
-		case 1:		return	WSPR_TX_FREQ_160m;	// 160m  1.838000 -  1.838200
-		case 3:		return	WSPR_TX_FREQ_80m;	// 80m   3.570000 -  3.570200
-		case 5:		return	WSPR_TX_FREQ_60m;	// 60m   5.288600 -  5.288800
-		case 7:		return	WSPR_TX_FREQ_40m;	// 40m   7.040000 -  7.040200
-		case 10:	return	WSPR_TX_FREQ_30m;	// 30m  10.140100 - 10.140300
-		case 14:	return	WSPR_TX_FREQ_20m;	// 20m  14.097000 - 14.097200
-		case 18:	return	WSPR_TX_FREQ_17m;	// 17m  18.106000 - 18.106200
-		case 21:	return	WSPR_TX_FREQ_15m;	// 15m  21.096000 - 21.096200
-		case 24:	return	WSPR_TX_FREQ_12m;	// 12m  24.926000 - 24.926200
-		case 28:	return	WSPR_TX_FREQ_10m;	// 10m  28.126000 - 28.126200
-		case 50:	return	WSPR_TX_FREQ_6m;	// 6m   50.294400 - 50.294600
-		case 70:	return	WSPR_TX_FREQ_4m;	// 4m   70.092400 - 70.092600?
-		case 144:	return	WSPR_TX_FREQ_2m;	// 2m  144.489900 - 144.490100
-		case -1:								// LF  ?
-		case 433:								// 70cm 433. - 433.
-		case 1296:								// 23cm  1296. - 1296.
-					LOG_E("Not implemented WSPR bands\n");
-					break;
-		default:	LOG_E("Wrong WSPR band %d selected.\n", band);
-					break;						// No TX mode
-	}
-	return WSPR_TX_FREQ_NONE;
-}
-
-int
-getWsprSlotType(int type)
-{
-	if (type < 0 || type > 3) {
-		LOG_E("Wrong WSPR type %d selected.\n", type);
-		type = 0;
-	}
-	return type;
-}
-
 
 
 //---------------------------------------------------------------------------------
@@ -339,11 +251,6 @@ void setup()
 	pinMode(LED_BUILTIN, OUTPUT);				// LED on the ESP
 	digitalWrite(LED_BUILTIN, HIGH);			// High is off!
 	pinMode(BUTTON_INPUT, INPUT_PULLUP);		// Button for display on/off
-
-	// Find the ESP chip-id specific data.
-	chipIdIndex = 0;
-	while (ESPChipInfo[chipIdIndex].ChipId != ESP.getChipId() && ESPChipInfo[chipIdIndex].ChipId != 0xffffffff)
-		chipIdIndex++;
 
 	Serial.begin(115200);
 	Serial.setTimeout(2000);
@@ -426,10 +333,7 @@ void setupWifiStatioMode()
 
 	WiFi.disconnect(false);										// Cleanup old info
 	WiFi.mode(WIFI_STA);										// Set WiFi to station mode
-
 	WiFi.setHostname(config.hostname);							// Set Hostname.
-//	wifi_station_set_hostname(ESPChipInfo[chipIdIndex].Hostname);
-
 	WiFi.setAutoReconnect(true);								// Keep WiFi connected
 
 	// Register WiFi event handlers
@@ -582,8 +486,6 @@ void jsonSetConfig(String jsonString)
 }
 
 
-//FWK
-
 void initiateConfig()
 {
 	LOG_I("INIT: Wspr call suffix %s\n", config.suffix);
@@ -591,9 +493,11 @@ void initiateConfig()
 	LOG_I("INIT: Wspr call prefix %s\n", config.prefix);
 	LOG_I("INIT: Wspr qth locator %s\n", config.qth);
 	LOG_I("INIT: Wspr TX power %ddBm\n", config.power);
+	LOG_I("INIT: Display auto off at %d seccond\n", config.displayOff);
+	LOG_I("INIT: Temperature sensor correction %.1f\n", config.temp_cor);
+	LOG_I("INIT: correction=%ld\n", config.freq_cal_factor);
 
 	// Set the frequency correction value
-	LOG_I("INIT: correction=%ld\n", config.freq_cal_factor);
 	si5351.set_correction(config.freq_cal_factor, si5351_pll_input::SI5351_PLL_INPUT_XO);
 
 	//++ Set the random seed ones every day.
@@ -609,10 +513,6 @@ void initiateConfig()
 	WiFi.setHostname(config.hostname);					// Set WiFi Hostname.
 	MDNS.setHostname(config.hostname);					// Set mDNS hostname
 #endif
-
-	LOG_I("INIT: Display auto off at %d seccond\n", config.displayOff);
-
-	LOG_I("INIT: Temperature sensor correction %.1f\n", config.temp_cor);
 }
 
 //
@@ -695,10 +595,10 @@ void makeSlotPlanTemp()
 		LOG_I("TX Slots: temperature %2.1f code [%d, %d, %d, %d]\n", temperature_now, s0, s1, s2, s3);
 
 		// s0;	// De temp caculatie gaat niet goed door de extra tx, check ook op WSPR2
-	//	wspr_slot_type[s0]		= getWsprSlotType(jsonDoc["temp_wspr_type"][0] | 3);	// WSPR_TX_TYPE_3
-		wspr_slot_type[s1]		= getWsprSlotType(jsonDoc["temp_wspr_type"][1] | 2);
-		wspr_slot_type[s2]		= getWsprSlotType(jsonDoc["temp_wspr_type"][2] | 2);
-		wspr_slot_type[s3]		= getWsprSlotType(jsonDoc["temp_wspr_type"][3] | 2);
+	//	wspr_slot_type[s0]		= getWsprSlotType(jsonDoc["temp_wspr_type"][0] | 3);	// WSPR_TX_TYPE_3, SQL Query wrong
+		wspr_slot_type[s1]		= getWsprSlotType(jsonDoc["temp_wspr_type"][0] | 2);
+		wspr_slot_type[s2]		= getWsprSlotType(jsonDoc["temp_wspr_type"][1] | 2);
+		wspr_slot_type[s3]		= getWsprSlotType(jsonDoc["temp_wspr_type"][2] | 2);
 
 		int clk  = jsonDoc["temp_wspr_clk"]  | SI5351_CLK0;
 	//	wspr_slot_freq[s0][clk] = wsprBandToFreq(band);
@@ -707,6 +607,45 @@ void makeSlotPlanTemp()
 		wspr_slot_freq[s3][clk] = wsprBandToFreq(band);
 	}
 #endif
+}
+
+uint32_t
+wsprBandToFreq(int band)
+{
+	switch(band) {
+		case 0:		break;						// MF      138000 ?		Now it is No Band
+		case 1:		return	WSPR_TX_FREQ_160m;	// 160m  1.838000 -  1.838200
+		case 3:		return	WSPR_TX_FREQ_80m;	// 80m   3.570000 -  3.570200
+		case 5:		return	WSPR_TX_FREQ_60m;	// 60m   5.288600 -  5.288800
+		case 7:		return	WSPR_TX_FREQ_40m;	// 40m   7.040000 -  7.040200
+		case 10:	return	WSPR_TX_FREQ_30m;	// 30m  10.140100 - 10.140300
+		case 14:	return	WSPR_TX_FREQ_20m;	// 20m  14.097000 - 14.097200
+		case 18:	return	WSPR_TX_FREQ_17m;	// 17m  18.106000 - 18.106200
+		case 21:	return	WSPR_TX_FREQ_15m;	// 15m  21.096000 - 21.096200
+		case 24:	return	WSPR_TX_FREQ_12m;	// 12m  24.926000 - 24.926200
+		case 28:	return	WSPR_TX_FREQ_10m;	// 10m  28.126000 - 28.126200
+		case 50:	return	WSPR_TX_FREQ_6m;	// 6m   50.294400 - 50.294600
+		case 70:	return	WSPR_TX_FREQ_4m;	// 4m   70.092400 - 70.092600?
+		case 144:	return	WSPR_TX_FREQ_2m;	// 2m  144.489900 - 144.490100
+		case -1:								// LF  ?
+		case 433:								// 70cm 433. - 433.
+		case 1296:								// 23cm  1296. - 1296.
+					LOG_E("Not implemented WSPR bands\n");
+					break;
+		default:	LOG_E("Wrong WSPR band %d selected.\n", band);
+					break;						// No TX mode
+	}
+	return WSPR_TX_FREQ_NONE;
+}
+
+int
+getWsprSlotType(int type)
+{
+	if (type < 0 || type > 3) {
+		LOG_E("Wrong WSPR type %d selected.\n", type);
+		type = 0;
+	}
+	return type;
 }
 
 void printSlotPlan()
@@ -731,10 +670,13 @@ void printSlotPlan()
 
 void ReadTemperature()
 {
+	sensors.setWaitForConversion(true);	// Block until the sensor is read
 	sensors.requestTemperatures();
+	int devices = sensors.getDeviceCount();
+
 	temperature_now = sensors.getTempCByIndex(0) + config.temp_cor;
 
-	LOG_I("Sensor DS18B20 temperature %.1fºC\n", temperature_now);
+	LOG_I("Sensor DS18B20 (%d) temperature %.1fºC\n", devices, temperature_now);
 }
 
 //---------------------------------------------------------------------------------
@@ -772,7 +714,7 @@ void loop()
 	loop_led_tick();
 
 #ifdef FEATURE_OTA
-	yield();
+//	yield();
 	ArduinoOTA.handle();
 #endif
 }
@@ -965,12 +907,12 @@ void init_si5351()
 		wspr_tx_disable(SI5351_CLK1);
 		wspr_tx_disable(SI5351_CLK2);
 
-		ssd1306_printf_P(200, PSTR("SI5351\nOk"));
+		ssd1306_printf_P(500, PSTR("SI5351\nOk"));
 	}
 	else
 	{
 		LOG_E("SI5351 Initialize error\n");
-		ssd1306_printf_P(200, PSTR("SI5351\nERROR"));
+		ssd1306_printf_P(1000, PSTR("SI5351\nERROR"));
 	}
 }
 
@@ -1009,13 +951,15 @@ void wspr_tx_init(String& call)
 	{
 		LOG_I("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call.c_str(), config.qth, config.power);
 		wspr.wspr_encode(call.c_str(), config.qth, config.power, wspr_symbols);
-
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
 		print_wspr_symbols(call.c_str(), config.qth, config.power, wspr_symbols);
 #endif
-
 		timer_us_wspr_bit = micros();
 		wspr_tx_bit();
+	}
+	else
+	{
+		LOG_E("WSPR TX not started, SI5351 not ready.\n");
 	}
 }
 
@@ -1070,8 +1014,22 @@ void wspr_tx_freq(si5351_clock clk)
 		wspr_slot_freq[now_slot][clk] != 0)
 	{
 		uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[now_slot][clk] + wspr_slot_band[now_slot]);
-		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) )
+
+#ifdef FEATURE_NO_KLIK
+		si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);		// slow step tx off
+		si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
+		// si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);
+#endif
+		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) ) {
 			LOG_E("ERROR: wspr_tx_freq(%d) / SI5351::set_freq(...)\n", clk);
+		}
+
+#ifdef FEATURE_NO_KLIK
+		// si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);	// slow step tx on
+		// si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
+		si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);
+		si5351.drive_strength(clk, SI5351_DRIVE_8MA);
+#endif
 	}
 }
 
@@ -1085,16 +1043,27 @@ void wspr_tx_enable(si5351_clock clk)
 				wspr_slot_freq[now_slot][clk] / 1000000.0, 
 				wspr_slot_band[now_slot]);
 
-		si5351.drive_strength(clk, SI5351_DRIVE_8MA); 			// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
+//		si5351.drive_strength(clk, SI5351_DRIVE_8MA); 			// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
 		si5351.set_clock_pwr(clk, 1);
 		si5351.output_enable(clk, 1);
+#ifdef FEATURE_NO_KLIK
+		si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);	// slow step tx on
+		si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
+		si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);
+#endif
+		si5351.drive_strength(clk, SI5351_DRIVE_8MA);
 	}
  }
 
 void wspr_tx_disable(si5351_clock clk)
 {
-	si5351.set_clock_pwr(clk, 0);
+#ifdef FEATURE_NO_KLIK
+	si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);		// slow step tx off
+	si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
+	si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);
+#endif
 	si5351.output_enable(clk, 0);
+	si5351.set_clock_pwr(clk, 0);
 }
 
 void ssd1306_main_window()
