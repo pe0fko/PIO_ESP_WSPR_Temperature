@@ -997,6 +997,7 @@ void JTEncode::wspr_bit_packing(uint8_t * c)
 			strncpy(prefix, callsign, slash_pos);
 			strncpy(base_call, callsign + slash_pos + 1, 7);
 
+			//PE0FKO : The single prefix fix.
 			if(prefix[1] == ' ' || prefix[1] == 0)
 			{
 				// Right align prefix

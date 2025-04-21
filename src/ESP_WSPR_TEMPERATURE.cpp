@@ -45,6 +45,7 @@
 #include <JTEncode.h>				// Etherkit
 #include <DallasTemperature.h>		// Temperature sensor Dallas DS18B20
 #include <WiFi_SSID.h>				// WiFi SSID's from know networks
+#include <QTHLocator.h>				// Get the QTH locator from the internet
 
 #ifdef FEATURE_OTA					// OTA & mDNS (included)
 #include <ArduinoOTA.h>
@@ -53,15 +54,15 @@
 
 //#define	URL_BASE	"http://sample.nl/wspr/client_"
 //#define	URL_ID		"NL"
-//#define	URL_PAR		"?foo=bar&test=123"
 
 // JSon static and default config.
 const	char	localConfig[] = R"(
-{	"call":"PE0aaaa"
-,	"locator":"JO00AA"
-,	"hostname":"wspr"
+{		"call":"PE0aaaa"
+,		"txenabled":false
+,		"hostname":"wspr"
 }
 )";
+//,		"locator":"JO00AA"
 
 /* ==== Example ====
 {       "chipid":6479671
@@ -71,35 +72,55 @@ const	char	localConfig[] = R"(
 ,       "locator":"JO32CD"
 ,       "power":"10"
 ,       "hostname":"wsprtx"
-,       "clk0":[7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14]
-,       "clk1":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-,       "clk2":[0,144,0,50,0,0,144,0,50,0,0,144,0,50,0,0,144,0,50,0,0,144,0,50,0,0,144,0,50,0]
-,       "wsprtype":[3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
+,		"txenabled":true
 ,       "rndseed":19561113
 ,       "displayoff":300
 ,       "freq_correction":762
+,		"timezones":[
+		{"start":0,"end":6,"clk":0,"list":"clk0N"},
+		{"start":6,"end":18,"clk":0,"list":"clk0D"},
+		{"start":18,"end":24,"clk":0,"list":"clk0N"},
+		{"start":0,"end":24,"clk":1,"list":"clk1"},
+		{"start":0,"end":24,"clk":2,"list":"clk2"}	]
+,       "clk0N":[7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14]
+,       "clk0D":[7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14,7,3,14]
+,       "clk1":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+,       "clk2":[0,144,0,50,0,0,144,0,50,0,0,144,0,50,0,0,144,0,50,0,0,144,0,50,0,0,144,0,50,0]
+,       "wsprtype":[3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
 ,       "temp_wspr_band":21
 ,       "temp_wspr_clk":0
-,       "temp_wspr_type":[2,2,2]
 ,       "temp_correction":-1.0
 }
 */
 
-static		JsonDocument	jsonDoc;						// Allocate the JSON document
+static	JsonDocument	jsonDoc;						// Allocate the JSON document
 
-static	struct		config_t
-{		char		prefix[4];
-		char		call[16];
-		char		suffix[4];
-		char		qth[8];
+struct	config_t
+{		String		call;
+		String		prefix;
+		String		suffix;
+		String		qth;
 		uint8_t		power;
 		uint32_t	freq_cal_factor;
 		uint32_t	randomSeed;
-		char		hostname[24+1];
+		String		hostname;
 		int			displayOff;
 		float		temp_cor;
 
-} config;
+};
+
+config_t config	=
+{		"PE0xxx",
+		"",
+		"",
+		"JO32xx",
+		10,
+		0,
+		0,
+		HOSTNAME,
+		300,
+		0.0
+};
 
 
 
@@ -119,9 +140,11 @@ static	struct		config_t
 #define	WSPR_TX_FREQ_NONE		0UL				// No TX mode
 
 #define		MYTZ				TZ_Europe_Amsterdam	// TZ string for currect location
-#define		WSPR_SLOTS_MAX		30			// 30 times 2min slots in a hour
+#define		WSPR_SLOTS_HOUR		30			// 30 times 2min slots in a hour
 #define		BUTTON_INPUT		D6			// GPIO 12, INPUT_PULLUP
-#define		ONE_WIRE_BUS		D7			// GPIO 13
+#ifndef ONE_WIRE_BUS
+#define		ONE_WIRE_BUS		D2			// D2-->GPIO 16, D1 Mini-->GPIO 04
+#endif
 
 //#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_17m + 100)
 //#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_40m + 100)
@@ -133,9 +156,10 @@ static	struct		config_t
 #ifdef DEBUG_ESP_PORT
 // Put the strings in PROGMEM, slow but free some (constant) ram memory.
 //  #define LOG_I(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
-  #define LOG_I(F, ...)		{ if (display_status == DISPLAY_ON) DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
+//#define LOG_I(F, ...)		{ if (display_status == DISPLAY_ON) DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
+  #define LOG_I(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
   #define LOG_D(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("DEBUG: " F), ## __VA_ARGS__); }
-  #define LOG_W(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("W: "     F), ## __VA_ARGS__); }
+  #define LOG_W(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("WARNING: " F), ## __VA_ARGS__); }
   #define LOG_E(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("ERROR: " F), ## __VA_ARGS__); DEBUG_ESP_PORT.flush(); delay(100); }	// delay!!
   #define LOG_F(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("FAIL: "  F), ## __VA_ARGS__); DEBUG_ESP_PORT.flush(); ESP.restart(); while(1); }
 #else
@@ -154,6 +178,7 @@ static	struct		config_t
 static		Adafruit_SSD1306	display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 static		Si5351				si5351;
 static		JTEncode			wspr;
+static		QTHLocator			QTH;										// Get the QTH locator from the internet
 
 static		WiFiEventHandler	mConnectHandler;							// WiFi event handler for the Connect
 static		WiFiEventHandler	mDisConnectHandler;							// WiFi event handler for the Disconnect
@@ -184,15 +209,15 @@ static		uint8_t				wspr_symbols[WSPR_SYMBOL_COUNT];
 static		uint32_t			wspr_symbol_index		= 0;
 static		uint32_t			wspr_tx_counter        	= 0;
 
-static		uint8_t				now_hour;								// Time now in hour (0..23)
-static		uint8_t				now_slot;								// Time now in slot (0..29)
+static		uint8_t				hour_now;								// Time now in hour (0..23)
+static		uint8_t				slot_now;								// Time now in slot (0..29)
 static		uint8_t				slot_sec;								// 
 
 			enum { WSPR_TX_NONE, WSPR_TX_TYPE_1, WSPR_TX_TYPE_2, WSPR_TX_TYPE_3 };
 
-static		int					wspr_slot_type[WSPR_SLOTS_MAX];				// 0=None, 1="CALL", 2="P/CALL/S", 3="<P/CALL/S>"
-static		uint32_t			wspr_slot_band[WSPR_SLOTS_MAX];				// Band freqency, 0 .. 200 Hz
-static		uint32_t			wspr_slot_freq[WSPR_SLOTS_MAX][3];			// TX frequency for every CLK output (0..2)
+static		int					wspr_slot_type[WSPR_SLOTS_HOUR];				// 0=None, 1="CALL", 2="P/CALL/S", 3="<P/CALL/S>"
+static		uint32_t			wspr_slot_band[WSPR_SLOTS_HOUR];				// Band freqency, 0 .. 200 Hz
+static		uint32_t			wspr_slot_freq[WSPR_SLOTS_HOUR][3];			// TX frequency for every CLK output (0..2)
 
 const		uint32_t			wspr_free_second		= 8192.0 / 12000.0 * WSPR_SYMBOL_COUNT + 1.0;
 
@@ -233,14 +258,19 @@ void		ssd1306_center_string(const char* buffer, uint8_t y, uint8_t size=1);
 void		ssd1306_background();
 void		makeSlotPlan();
 void		makeSlotPlanEmpty();
-void		makeSlotPlanClkN();
+void		makeSlotPlanZone();
+void		makeSlotPlanClk(int clk, const char* zone);
 void		makeSlotPlanTemp();
 int			getWsprSlotType(int type);
-uint32_t	wsprBandToFreq(int band);
+uint32_t	getWsprBandFreq(int band);
 void		printSlotPlan();
 void		jsonSetConfig(String json);
-bool		loadWebPage(String& data);
-void		initiateConfig();
+const char* getJsonClkArray(int clk);
+void		setSlotTime();
+bool		loadWebConfigData();
+// void		printJsonDoc(JsonObject& jsonDoc);
+// void		printJsonDoc(String txt, JsonObject& jsonDoc);
+// void		printJsonDoc(String txt, JsonDocument& jsonDoc);
 
 
 //---------------------------------------------------------------------------------
@@ -254,62 +284,50 @@ void setup()
 
 	Serial.begin(115200);
 	Serial.setTimeout(2000);
-	while(!Serial) yield();
+	while(!Serial);
 #ifdef DEBUG_ESP_PORT
 	Serial.setDebugOutput(true);
 #endif
 	delay(1000);
 
+	// sensors.begin();					// Init the onewire for the DS18B20 temp sensor
+	// LOG_I("DS18B20: %d devices found\n", sensors.getDeviceCount());
+	// sensors.setResolution(12);			// Set the resolution to 12 bit
+	// // sensors.setWaitForConversion(true);	// No blocking wait for the conversion
+	// // sensors.setWaitForConversion(true);	// Block until the sensor is read
+	// sensors.requestTemperatures();
+	// LOG_I("DS18B20: %d devices found\n", sensors.getDeviceCount());
+
 	LOG_I("=== PE0FKO, TX WSPR temperature coded\n");
 	LOG_I("=== Version: " VERSION ", Build at: " __DATE__ " " __TIME__ "\n");
+	LOG_I("=== Config: %s - %s - %ddBm\n", config.call.c_str(), config.qth.c_str(), config.power);
+	LOG_I("=== ChipId: %d, Hostname: %s.local\n", ESP.getChipId(), config.hostname.c_str() );
+	LOG_I("=== SSD1306: Display %dx%d address:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, SCREEN_ADDRESS);
+	// LOG_I("value_us_wspr_bit: %ld\n", value_us_wspr_bit);
 
-	jsonSetConfig(localConfig);
-	initiateConfig();
-	makeSlotPlan();
-
-	LOG_I("=== Config: %s - %s - %ddBm\n", config.call, config.qth, config.power);
-	LOG_I("=== ChipId: 0x%08x, Host:%s, FreqCor=%d, TempCor=%f\n", 
-			ESP.getChipId(),
-			config.hostname,
-			config.freq_cal_factor,
-			config.temp_cor
-	);
-
-	LOG_I("value_us_wspr_bit: %ld\n", value_us_wspr_bit);
-	LOG_I("SSD1306: %dx%d addr:0x%02x\n", SSD1306_LCDHEIGHT, SSD1306_LCDWIDTH, SCREEN_ADDRESS);
-
+	// Start the display driver
+	// Wire.begin(D2, D1);						// I2C SDA, SCL
+	Wire.setClock(400000);						// I2C clock speed 400kHz
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-
 //	display.setRotation(2);						// Display upside down...
 
-	ssd1306_display_on();						// Start the display ON timer
+	// Json decode the first, basic, config
+	jsonSetConfig(localConfig);					// Load the default config
+	makeSlotPlan();								// Make a plan for the TX slots at 0h
 
-//	ssd1306_printf_P(800, PSTR("Hostname\n%s.local"), config.hostname);
-	ssd1306_printf_P(800, PSTR("WSPR TX\nID %d\n%s.local"), ESP.getChipId(), config.hostname);
+	// ssd1306_display_on();						// Start the display ON timer
+	ssd1306_printf_P(2000, PSTR("WSPR TX\nID %d\n%s.local"), ESP.getChipId(), config.hostname.c_str());
 
 	setupWifiStatioMode();						// Setup the Wifi for the NTP service 
 
-#ifdef FEATURE_OTA
-	ArduinoOTA.setHostname(config.hostname);
-	ArduinoOTA.onStart([]() 
-		{	ssd1306_printf_P(100, PSTR("OTA update\nRunning")); 
-			wspr_tx_disable(SI5351_CLK0);
-			wspr_tx_disable(SI5351_CLK1);
-			wspr_tx_disable(SI5351_CLK2);
-		});
-	ArduinoOTA.onEnd([]()   
-		{	ssd1306_printf_P(100, PSTR("OTA update\nReboot"));
-			ESP.restart();
-		});
-//	ArduinoOTA.setPassword(OtaPassword);
-	ArduinoOTA.setPassword(OTAPASSWD);
-	ArduinoOTA.begin();
-#endif
+	sensors.begin();							// Init the onewire for the DS18B20 temp sensor
+	sensors.setResolution(12);					// Set the resolution to 12 bit
+	// sensors.setWaitForConversion(true);		// No blocking wait for the conversion
+	sensors.setWaitForConversion(true);			// Block until the sensor is read
+	LOG_I("DS18B20: %d devices found\n", sensors.getDeviceCount());
 
-	sensors.begin();					// Init the onewire for the DS18B20 temp sensor
-	ReadTemperature();					// Read the Dallas temperature one-wire sensor
-
-	init_si5351();						// Init the frequency generator SI5351
+	ReadTemperature();							// Read the Dallas temperature one-wire sensor
+	init_si5351();								// Init the frequency generator SI5351
 
 #ifdef FEATURE_CARRIER
 	LOG_I("CW Carrier on: %fMHz (CLK%d)\n", (float)CARRIER_FREQUENCY/1e6, CARRIER_SI5351_CLK);
@@ -319,10 +337,34 @@ void setup()
 	si5351.output_enable( CARRIER_SI5351_CLK, 1);
 #endif
 
+#ifdef FEATURE_OTA
+	if ( ! config.hostname.isEmpty())
+	{
+		LOG_I("Setup OTA: %s\n", config.hostname.c_str());
+		ArduinoOTA.setHostname(config.hostname.c_str());
+
+#ifdef OTAPASSWD
+		ArduinoOTA.setPassword(OTAPASSWD);
+#endif
+		// LOG_I("Set OTA: %s\n", config.hostname.c_str());
+		// ArduinoOTA.setHostname(config.hostname.c_str());
+		ArduinoOTA.onStart([]() 
+			{	ssd1306_printf_P(1000, PSTR("OTA update\nRunning")); 
+				wspr_tx_disable(SI5351_CLK0);
+				wspr_tx_disable(SI5351_CLK1);
+				wspr_tx_disable(SI5351_CLK2);
+			});
+		ArduinoOTA.onEnd([]()   
+			{	ssd1306_printf_P(1000, PSTR("OTA update\nReboot"));
+				ESP.restart();
+			});
+		ArduinoOTA.begin();
+	}
+#endif
+
+
 	ssd1306_printf_P(300, PSTR("Start\nLooping"));
-
 	ssd1306_main_window();
-
 	LOG_I("=== Start looping...\n");
 }
 
@@ -333,7 +375,7 @@ void setupWifiStatioMode()
 
 	WiFi.disconnect(false);										// Cleanup old info
 	WiFi.mode(WIFI_STA);										// Set WiFi to station mode
-	WiFi.setHostname(config.hostname);							// Set Hostname.
+	WiFi.setHostname(config.hostname.c_str());					// Set Hostname.
 	WiFi.setAutoReconnect(true);								// Keep WiFi connected
 
 	// Register WiFi event handlers
@@ -385,11 +427,6 @@ void sntp_time_is_set(bool from_sntp)
 	LOG_I("NTP update at [%dus] [%d] %s", tv.tv_usec, timer_us_one_second, ctime(&tv.tv_sec));
 }
 
-uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
-{
-	return sntp_update_delay;
-}
-
 void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 {
 	LOG_I("WiFi disconnected from SSID: %s, Reason: %d\n"
@@ -401,119 +438,112 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 	ntp_time_sync = false;
 }
 
-void loadWebConfigData()
+uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 {
-	String page;
-	if (loadWebPage(page)) {
-		jsonSetConfig(page);
-		initiateConfig();
-		makeSlotPlan();				// Make a plan for the TX slots
-		jsonDoc.clear();			// Not needed anymore
-	}
+	return sntp_update_delay;
 }
 
-bool loadWebPage(String& data)
+bool loadWebConfigData()
 {
-	HTTPClient	http;
-	WiFiClient	client;
-	int			httpCode;
-	bool		ret = false;
-
 	String URL(URL_BASE);
 	URL.concat(String(ESP.getChipId()));
 	URL.concat('_');
 	URL.concat(URL_ID);
 	URL.concat(".json");
 
-	LOG_I("URL: %s\n", URL.c_str());
-
-	data.clear();
-
-	http.setUserAgent("PE0FKO ESP8266 WSPR-TX");
-
-	if (http.begin(client, URL))				//Initiate connection
-	{
-		if ((httpCode = http.GET()) > 0)		// Make request
-		{
-			LOG_I("[HTTP] GET... code: %d\n", httpCode);
-
-			if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) 
-			{
-				data = http.getString();		// Get response
-				ret = true;
-			}
-			http.end();
-		}
-		else {
-			LOG_W("[HTTP] GET... failed, error: %s\n", 
-					http.errorToString(httpCode).c_str());
-		}
+	String page;
+	if (QTH.getWebPage(page, URL) == HTTP_CODE_OK) {
+		jsonSetConfig(page);
+	} else {
+		LOG_E("Error loading web config, from: %s\n", page.c_str());
+		// displayMessage(1000, "E: JSON");
+		return false;
 	}
-
-	return ret;
+	return true;
 }
+
+
+// void printJsonDoc(String txt, JsonObject& jsonDoc)
+// void printJsonDoc(String txt, JsonDocument& jsonDoc)
+// JsonVariantConst
+void printJsonDoc(String txt, JsonDocument& jsonDoc)
+{
+	if (display_status == DISPLAY_ON)
+	{
+		LOG_I("JSON %s: ", txt.c_str()); 
+		serializeJson(jsonDoc, Serial);	
+		LOG_I("\n");
+	}
+}
+
+
 
 void jsonSetConfig(String jsonString)
 {
 	jsonDoc.clear();
 
-	DeserializationError error = 
-		deserializeJson(jsonDoc, jsonString);
-
-	if (error) {
+	DeserializationError error =  deserializeJson(jsonDoc, jsonString);
+	if (error != DeserializationError::Ok) {
 		LOG_E("Error Json Seserialize: %s\n", error.f_str());
-//		displayMessage(1000, "E: JSON");
+		// displayMessage(1000, "E: JSON");
+		return;
 	}
 
-//	LOG_I("JSON:"); serializeJson(jsonDoc, Serial);	LOG_I("\n");
+	// LOG_I("JSON:"); serializeJson(jsonDoc, Serial);	LOG_I("\n");
+	printJsonDoc("Config", jsonDoc);
 
-	memset(&config, 0, sizeof(config));		// Na classes in the config...
+	config.call				= jsonDoc["call"]				| "PA0xxx";
+	config.prefix			= jsonDoc["prefix"]				| "";
+	config.suffix			= jsonDoc["suffix"]				| "";
+	config.hostname			= jsonDoc["hostname"]			| "";
+	config.power			= jsonDoc["power"]				| 10;
+	config.freq_cal_factor	= jsonDoc["freq_correction"]	| 0UL;
+	config.randomSeed		= jsonDoc["rndseed"]			| 19570215;
+	config.displayOff		= jsonDoc["displayoff"]			| 120;
+	config.temp_cor			= jsonDoc["temp_correction"]	| 0.0;
 
-	strncpy(config.prefix,		jsonDoc["prefix"]	| "",		sizeof(config.prefix)-1);
-	strncpy(config.call,		jsonDoc["call"]		| "PA0xxx",	sizeof(config.call)-1);
-	strncpy(config.suffix,		jsonDoc["suffix"]	| "",		sizeof(config.suffix)-1);
+	if (jsonDoc["locator"].is<const char*>()) 
+	{
+		config.qth = jsonDoc["locator"]	| "JO32xx";
+		Serial.printf("Config locator: %s\n", config.qth.c_str());
+	}
+	else 
+	{
+		Serial.printf("IP locator: by QTH\n");
+		config.qth = QTH.getQthLoc();
+	}
 
-	strncpy(config.qth,			jsonDoc["locator"]	| "JO32xx",	sizeof(config.qth)-1);
-
-	config.power				= jsonDoc["power"]				| 10;
-	config.freq_cal_factor		= jsonDoc["freq_correction"]	| 0UL;
-	config.randomSeed			= jsonDoc["rndseed"]			| 19570215;
-
-	strncpy(config.hostname,	jsonDoc["hostname"]	| "wspr",	sizeof(config.hostname)-1);
-
-	config.displayOff			= jsonDoc["displayoff"]			| 120;
-	config.temp_cor				= jsonDoc["temp_correction"]	| 0.0;
-}
-
-
-void initiateConfig()
-{
-	LOG_I("INIT: Wspr call suffix %s\n", config.suffix);
-	LOG_I("INIT: Wspr call sign   %s\n", config.call);
-	LOG_I("INIT: Wspr call prefix %s\n", config.prefix);
-	LOG_I("INIT: Wspr qth locator %s\n", config.qth);
-	LOG_I("INIT: Wspr TX power %ddBm\n", config.power);
-	LOG_I("INIT: Display auto off at %d seccond\n", config.displayOff);
-	LOG_I("INIT: Temperature sensor correction %.1f\n", config.temp_cor);
-	LOG_I("INIT: correction=%ld\n", config.freq_cal_factor);
+	// Display the config data
+	//=========================================================
+	LOG_I("INIT: Wspr call sign   	: %s\n",			config.call.c_str());
+	LOG_I("INIT: Wspr call prefix 	: %s\n",			config.prefix.c_str());
+	LOG_I("INIT: Wspr call suffix 	: %s\n",			config.suffix.c_str());
+	LOG_I("INIT: Wspr qth locator 	: %s\n",			config.qth.c_str());
+	LOG_I("INIT: Wspr TX power    	: %ddBm\n",			config.power);
+	LOG_I("INIT: Wspr TX hostname	: %s.local\n",		config.hostname.c_str());
+	LOG_I("INIT: Display auto off 	: %d seccond\n",	config.displayOff);
+	LOG_I("INIT: Freq callibration	: %ld\n", 			config.freq_cal_factor);
+	LOG_I("INIT: Temperature sensor correction %.1f\n",	config.temp_cor);
 
 	// Set the frequency correction value
 	si5351.set_correction(config.freq_cal_factor, si5351_pll_input::SI5351_PLL_INPUT_XO);
 
 	//++ Set the random seed ones every day.
 	//   Posible track of (semi) random numbers!
-	if (now_hour == 23)	// && now_slot == 29)
+	if (hour_now == 23)	// && slot_now == 29)
 	{
 		LOG_I("Set the const ramdom seed number 0x%08x\n", config.randomSeed);
 		randomSeed(config.randomSeed);
 	}
 
-#ifdef FEATURE_OTA
-	LOG_I("INIT: hostanem=%s\n", config.hostname);
-	WiFi.setHostname(config.hostname);					// Set WiFi Hostname.
-	MDNS.setHostname(config.hostname);					// Set mDNS hostname
-#endif
+	if ( ! config.hostname.isEmpty())
+	{
+		// LOG_I("INIT: hostname=%s\n", config.hostname.c_str());
+		WiFi.setHostname(config.hostname.c_str());					// Set WiFi Hostname.
+		MDNS.setHostname(config.hostname.c_str());					// Set mDNS hostname (for next setting)
+	}
 }
+
 
 //
 // Make a plan to TX in one of the 30 slots (2min inteval in a hour).
@@ -521,19 +551,82 @@ void initiateConfig()
 //
 void makeSlotPlan()
 {
-	makeSlotPlanEmpty();
-	makeSlotPlanClkN();
-	makeSlotPlanTemp();
-	printSlotPlan();
+	makeSlotPlanEmpty();		// Clear/Empty the slot plan, no TX done yet.
+
+	// Check if the TX is not enabled, default is true, then return.
+//	bool tx = false;
+//	if (jsonDoc["txenabled"].is<bool>())
+	bool tx = jsonDoc["txenabled"] | true;
+
+	LOG_I("TX %s by config.\n", tx ? "enabled" : "disabled");
+
+	if (tx)
+	{
+		makeSlotPlanZone();			// Make a plan for the zones
+		makeSlotPlanTemp();			// Make a plan for the temperature TX
+	}
+
+	printSlotPlan();		// Print the slot plan if needed
 }
 
-void makeSlotPlanEmpty()
+void makeSlotPlanZone()
 {
-//	int rnd0 = random(20, 180);				// All TX in the hour on the same band
-	for (int i = 0; i < WSPR_SLOTS_MAX; i++)
+	// Scan the time zones and make a plan for the clock
+	if (jsonDoc["timezones"].is<JsonArray>())
 	{
-		wspr_slot_type  [i]		= WSPR_TX_NONE;
-//		wspr_slot_band[i]		= rnd0;
+		// Check if this is the end of the last hour slot.
+		int hour = hour_now;	// Get the current hour from the system time
+		if (slot_now == 29) hour = (hour + 1) % 24;		// Next hour
+		LOG_I("Slot Plan Hour: %02d, Slot %d\n", hour, slot_now);
+
+		JsonArray timezones = jsonDoc["timezones"];
+		// JsonArray zones = jsonDoc["timezones"];
+		LOG_I("JSON Zone:"); serializeJson(timezones, Serial);	LOG_I("\n");
+		// printJsonDoc("Zones", zones.to<JsonObject>());
+
+		
+		for (JsonObject tz : timezones) 
+		{
+			int start = tz["start"];			// 0-23
+			int end = tz["end"];				// 0-24
+			int clk = tz["clk"];     			// 0-2
+			const char* list = tz["list"];		// "clk0N", etc.
+			
+			if ((start >= 0) &&	(start < 23) 
+			&&	(end >= 0) &&	(end <= 24)
+			&&	(start < end))
+			{
+				LOG_I("Zone: Start: %2d, End: %2d, Name: %s, now=%d\n", 
+					start, end, list, hour);
+
+				if (hour >= start && hour < end)
+				{
+					LOG_I("Make zone: %s, clk=%d\n", 
+						list, clk);
+
+					makeSlotPlanClk(clk, list);	// Make a plan for the clock
+				}
+			}
+//			else
+		}
+	}
+	else
+	{
+		LOG_I("No zone found, use default\n");
+		makeSlotPlanClk(0, "clk0");	// Make a plan for the clock 0
+		makeSlotPlanClk(1, "clk1");	// Make a plan for the clock 1
+		makeSlotPlanClk(2, "clk2");	// Make a plan for the clock 2
+	}
+}
+
+
+void 
+makeSlotPlanEmpty()
+{
+	// LOG_I("Empty the slot plan\n");
+	for (int i = 0; i < WSPR_SLOTS_HOUR; i++)
+	{
+		wspr_slot_type[i]		= WSPR_TX_NONE;
 		wspr_slot_band[i]		= random(20, 180);
 		wspr_slot_freq[i][0]	= WSPR_TX_FREQ_NONE;
 		wspr_slot_freq[i][1]	= WSPR_TX_FREQ_NONE;
@@ -541,40 +634,55 @@ void makeSlotPlanEmpty()
 	}
 }
 
-void makeSlotPlanClkN()
+#if 1
+
+void 
+makeSlotPlanClk(int clk, const char* zone)
 {
-	// JSON config the TX: { "clk0":[0,40,40....], "clk1":[0,0,0....], .... }
-	// 
+	// LOG_I("Zone: %s on clk:%d\n", zone, clk);
+	if (jsonDoc[zone].is<JsonArray>())
 	{
-		for (int s = 0; s < WSPR_SLOTS_MAX;  s++)
+		JsonArray slots = jsonDoc[zone];
+
+		for (size_t slot = 0, idx = 0; slot < WSPR_SLOTS_HOUR;  slot++, idx++)
 		{
-			int band0 = jsonDoc["clk0"][s] | 0;
-			int band1 = jsonDoc["clk1"][s] | 0;
-			int band2 = jsonDoc["clk2"][s] | 0;
-			
-			wspr_slot_type[s]	= band0 != 0 || band1 != 0 || band2 != 0
-				?	getWsprSlotType(jsonDoc["wsprtype"][s] | WSPR_TX_TYPE_2)
-				:	WSPR_TX_NONE;
+			if (idx >= slots.size()) 
+				idx = 0;	// Loop round the slots
 
-			wspr_slot_freq[s][SI5351_CLK0] = wsprBandToFreq(band0);
-			wspr_slot_freq[s][SI5351_CLK1] = wsprBandToFreq(band1);
-			wspr_slot_freq[s][SI5351_CLK2] = wsprBandToFreq(band2);
+			int band = slots[idx].as<int>();
+			int freq = getWsprBandFreq(band);
+
+			// LOG_I( "Slot %02d:%02d - Clk %d zone %s Band %d, Freq %d\n", slot, idx, clk, zone, band, freq);
+
+			if (freq != WSPR_TX_FREQ_NONE)
+				wspr_slot_type[slot] = getWsprSlotType(jsonDoc["wsprtype"][slot] | WSPR_TX_TYPE_2);
+
+			wspr_slot_freq[slot][clk] = freq;
 		}
-
-//		for (int s = 0; s < WSPR_SLOTS_MAX;  s++)
-//			LOG_I("S%d:%d:%d,", s, wspr_slot_freq[s][SI5351_CLK0], wspr_slot_type[s]);
-//		LOG_I("\n");
+	}
+	else
+	{
+		LOG_E("Zone %s not found\n", zone);
+		return;
 	}
 }
 
-void makeSlotPlanTemp()
+#else
+
+#endif
+
+
+void 
+makeSlotPlanTemp()
 {
 #if FEATURE_TEMPERATURE_TX
+
 	//	Add the temperature coding in a seperate hf band.
 	int band = jsonDoc["temp_wspr_band"] | WSPR_TX_NONE;
-	if (band != WSPR_TX_NONE)
+
+	if (band != WSPR_TX_NONE)	// && sensors.getDeviceCount() >= 1)
 	{
-		int   s0,s1,s2,s3,t;
+		int   s1,s2,s3,t;
 		float tf;
 
 		ReadTemperature();
@@ -590,27 +698,26 @@ void makeSlotPlanTemp()
 		s1 =  0 + t / 100;	t %= 100;			// 0-6 :  0 .. 12 min
 		s2 = 10 + t /  10;	t %= 10;			// 0-9 : 20 .. 38 min
 		s3 = 20 + t /   1;						// 0-9 : 40 .. 58 min
-		s0 = s1 + 1;							// After first digit tx
 
-		LOG_I("TX Slots: temperature %2.1f code [%d, %d, %d, %d]\n", temperature_now, s0, s1, s2, s3);
+		LOG_I("TX Slots: temperature %2.1f code [%d, %d, %d]\n", temperature_now, s1, s2, s3);
 
-		// s0;	// De temp caculatie gaat niet goed door de extra tx, check ook op WSPR2
-	//	wspr_slot_type[s0]		= getWsprSlotType(jsonDoc["temp_wspr_type"][0] | 3);	// WSPR_TX_TYPE_3, SQL Query wrong
-		wspr_slot_type[s1]		= getWsprSlotType(jsonDoc["temp_wspr_type"][0] | 2);
-		wspr_slot_type[s2]		= getWsprSlotType(jsonDoc["temp_wspr_type"][1] | 2);
-		wspr_slot_type[s3]		= getWsprSlotType(jsonDoc["temp_wspr_type"][2] | 2);
+		wspr_slot_type[s1] = WSPR_TX_TYPE_2;
+		wspr_slot_type[s2] = WSPR_TX_TYPE_2;
+		wspr_slot_type[s3] = WSPR_TX_TYPE_2;
 
 		int clk  = jsonDoc["temp_wspr_clk"]  | SI5351_CLK0;
-	//	wspr_slot_freq[s0][clk] = wsprBandToFreq(band);
-		wspr_slot_freq[s1][clk] = wsprBandToFreq(band);
-		wspr_slot_freq[s2][clk] = wsprBandToFreq(band);
-		wspr_slot_freq[s3][clk] = wsprBandToFreq(band);
+		if (clk >= SI5351_CLK0 && clk <= SI5351_CLK2) 
+		{
+			wspr_slot_freq[s1][clk] = getWsprBandFreq(band);
+			wspr_slot_freq[s2][clk] = getWsprBandFreq(band);
+			wspr_slot_freq[s3][clk] = getWsprBandFreq(band);
+		}
 	}
 #endif
 }
 
 uint32_t
-wsprBandToFreq(int band)
+getWsprBandFreq(int band)
 {
 	switch(band) {
 		case 0:		break;						// MF      138000 ?		Now it is No Band
@@ -641,18 +748,20 @@ wsprBandToFreq(int band)
 int
 getWsprSlotType(int type)
 {
-	if (type < 0 || type > 3) {
+	if (type < WSPR_TX_NONE || type > WSPR_TX_TYPE_3) 
+	{
 		LOG_E("Wrong WSPR type %d selected.\n", type);
-		type = 0;
+		type = WSPR_TX_NONE;
 	}
 	return type;
 }
 
-void printSlotPlan()
+void 
+printSlotPlan()
 {
 #ifdef FEATURE_PRINT_TIMESLOT
-	LOG_I("Time Slot:\n");
-	for(uint8_t i=0; i < WSPR_SLOTS_MAX; ++i) 
+	LOG_I("Time Slot:");
+	for(uint8_t i=0; i < WSPR_SLOTS_HOUR; ++i) 
 	{
 		if ((i % 4) == 0) LOG_I("\n");
 		LOG_I("    %02d:T%d[%d,%d,%d]+%d", i, 
@@ -672,11 +781,12 @@ void ReadTemperature()
 {
 	sensors.setWaitForConversion(true);	// Block until the sensor is read
 	sensors.requestTemperatures();
+
 	int devices = sensors.getDeviceCount();
 
 	temperature_now = sensors.getTempCByIndex(0) + config.temp_cor;
 
-	LOG_I("Sensor DS18B20 (%d) temperature %.1fºC\n", devices, temperature_now);
+	LOG_I("Sensor DS18B20 (#%d) temperature %.1fºC\n", devices, temperature_now);
 }
 
 //---------------------------------------------------------------------------------
@@ -685,26 +795,44 @@ void ReadTemperature()
 void loop()
 {
 	// Wait for the WiFi and NTP-time is known!
-	if (timer_no_network_connection == 0)
+	if (timer_no_network_connection != 0)
+	{
+		// Still no network, then reboot after some time
+		if ((millis() - timer_no_network_connection) >= value_no_network_connection)
+		{
+			ssd1306_printf_P(1000, PSTR("REBOOT\nNTP sync"));
+			LOG_F("REBOOT: No NTP time received.\n");
+		}
+	}
+	else
 	{
 		static bool firstBoot = true;
-		if (firstBoot) {
+		if (firstBoot) 
+		{
 			firstBoot = false;
-			loadWebConfigData();
+
+			setSlotTime();				// Get the current time and slot
+			QTH.begin();				// Get the QTH locator from the internet
+			if (loadWebConfigData())	// Load the config data
+				makeSlotPlan();			// Make a plan for the this TX hour
+#if 1
+			// Get the sunrise/sunset data from the web
+			if (QTH.getDayligth())
+			{
+				LOG_I("Daylight: Rise=%s, Set=%s\n", QTH.getSunRise().c_str(), QTH.getSunSet().c_str());
+				// ssd1306_printf_P(1000, PSTR("Daylight: %s"), QTH.getSunRise().c_str());
+			}
+			else
+			{
+				LOG_E("Error loading daylight data\n");
+				// ssd1306_printf_P(1000, PSTR("Error loading daylight data"));
+			}
+#endif	
 		}
 
 		loop_wspr_tx();
 		loop_1s_tick();
 		loop_20ms_tick();
-	}
-	else
-	{
-		// Still no network, then reboot after some time
-		if ((millis() - timer_no_network_connection) >= value_no_network_connection)
-		{
-			ssd1306_printf_P(100, PSTR("REBOOT\nNTP sync"));
-			LOG_F("REBOOT: No NTP time received.\n");
-		}
 	}
 
 	yield();
@@ -714,7 +842,6 @@ void loop()
 	loop_led_tick();
 
 #ifdef FEATURE_OTA
-//	yield();
 	ArduinoOTA.handle();
 #endif
 }
@@ -749,6 +876,18 @@ void loop_wspr_tx()
 #endif
 }
 
+void setSlotTime()
+{
+	time_t now = time(NULL);
+	struct tm* timeinfo = localtime(&now);
+
+	int m = timeinfo->tm_min;
+	int s = timeinfo->tm_sec;
+	hour_now	= timeinfo->tm_hour;
+	slot_now	= m / 2;
+	slot_sec	= s + (m % 2 ? 60 : 0);
+}
+
 // Secure one second function call
 void loop_1s_tick() 
 {
@@ -757,45 +896,51 @@ void loop_1s_tick()
 
 	timer_us_one_second +=	value_us_one_second;
 
-	time_t now = time(NULL);
-	struct tm* timeinfo = localtime(&now);
-
-	int m = timeinfo->tm_min;
-	int s = timeinfo->tm_sec;
-	now_hour	= timeinfo->tm_hour;
-	now_slot	= m / 2;
-	slot_sec	= s + (m % 2 ? 60 : 0);
+	setSlotTime();						// Get the current time and slot
 
 	//++ At every 2 minute interval start a WSPR message, if slot is richt.
-	if (slot_sec == 0)											// First second of the 2 minute interval clock
+	if (slot_sec == 0)												// First second of the 2 minute interval clock
 	{
 		String Call;
-		if (wspr_slot_type[now_slot] == WSPR_TX_TYPE_1) {			// Type 1 message: CALL, LOC4, dBm
+
+		switch (wspr_slot_type[slot_now]) {
+		case WSPR_TX_NONE:							// No WSPR TX slot
+			LOG_I("No WSPR TX slot %d\n", slot_now);
+			break;
+		case WSPR_TX_TYPE_1:						// Type 1 message: CALL, LOC4, dBm
 			Call = config.call;
-		}
-		else if (wspr_slot_type[now_slot] == WSPR_TX_TYPE_2) {		// Type 2 message: pre/CALL/suff, dBm
+			break;
+		case WSPR_TX_TYPE_2:						// Type 2 message: pre/CALL/suff, dBm
 			Call  = config.prefix;
 			Call += config.call;
 			Call += config.suffix;
-		}
-		else if (wspr_slot_type[now_slot] == WSPR_TX_TYPE_3) {		// Type 3 message: *hash* <pre/CALL/suff>, LOC6, dBm
+			break;
+		case WSPR_TX_TYPE_3:						// Type 3 message: *hash* <pre/CALL/suff>, LOC6, dBm
 			Call  = '<';
 			Call += config.prefix;
 			Call += config.call;
 			Call += config.suffix;
 			Call += '>';
-		}
-		wspr_tx_init(Call);
+		} 
 
-		Serial.printf("WSPR-Time: %2uH:%02uSLOT, Call=%s\n", now_hour, now_slot, Call.c_str());
+		if (!Call.isEmpty()) 
+		{
+			wspr_tx_init(Call);
+			Serial.printf("WSPR-Time: Hour:%u Slot:%u, CALL=%s, Freq=%d/%d/%d\n", 
+				hour_now, slot_now, 
+				Call.c_str(), 
+				wspr_slot_freq[slot_now][0], wspr_slot_freq[slot_now][1], wspr_slot_freq[slot_now][2]);
+		}
 	}
 
 	// Actions needed in the free time after a wspr tx (> 112sec)
 	if (slot_sec == wspr_free_second) 
 	{
-		if (now_slot == 0) {
+		if (slot_now == 29)		// Last slot of the hour
+		{
 			// First load the Json config data from webserver
 			loadWebConfigData();
+			makeSlotPlan();			// Make a plan for the next TX hour
 		}
 
 		// Only read the temp once every 2min
@@ -897,7 +1042,7 @@ void init_si5351()
 {
 	LOG_I("SI5351 init: xtal:%d, correction:%d\n", SI5351_XTAL_FREQ, config.freq_cal_factor);
 
-	ssd1306_printf_P(200, PSTR("SI5351\nSetup"));
+	ssd1306_printf_P(1000, PSTR("SI5351\nSetup"));
 
 	// TCXO input to xtal pin 1?
 	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, config.freq_cal_factor) )
@@ -907,7 +1052,7 @@ void init_si5351()
 		wspr_tx_disable(SI5351_CLK1);
 		wspr_tx_disable(SI5351_CLK2);
 
-		ssd1306_printf_P(500, PSTR("SI5351\nOk"));
+		ssd1306_printf_P(1000, PSTR("SI5351\nOk"));
 	}
 	else
 	{
@@ -949,11 +1094,13 @@ void wspr_tx_init(String& call)
 {
 	if (si5351_ready())
 	{
-		LOG_I("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call.c_str(), config.qth, config.power);
-		wspr.wspr_encode(call.c_str(), config.qth, config.power, wspr_symbols);
+		LOG_I("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call.c_str(), config.qth.c_str(), config.power);
+		wspr.wspr_encode(call.c_str(), config.qth.c_str(), config.power, wspr_symbols);
+
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
-		print_wspr_symbols(call.c_str(), config.qth, config.power, wspr_symbols);
+		print_wspr_symbols(call.c_str(), config.qth.c_str(), config.power, wspr_symbols);
 #endif
+
 		timer_us_wspr_bit = micros();
 		wspr_tx_bit();
 	}
@@ -1010,58 +1157,36 @@ void wspr_tx_bit()
 
 void wspr_tx_freq(si5351_clock clk)
 {
-	if (wspr_slot_type[now_slot] != WSPR_TX_NONE && 
-		wspr_slot_freq[now_slot][clk] != 0)
+	if (wspr_slot_type[slot_now] != WSPR_TX_NONE && 
+		wspr_slot_freq[slot_now][clk] != 0)
 	{
-		uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[now_slot][clk] + wspr_slot_band[now_slot]);
+		uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[slot_now][clk] + wspr_slot_band[slot_now]);
 
-#ifdef FEATURE_NO_KLIK
-		si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);		// slow step tx off
-		si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
-		// si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);
-#endif
 		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) ) {
 			LOG_E("ERROR: wspr_tx_freq(%d) / SI5351::set_freq(...)\n", clk);
 		}
-
-#ifdef FEATURE_NO_KLIK
-		// si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);	// slow step tx on
-		// si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
-		si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);
-		si5351.drive_strength(clk, SI5351_DRIVE_8MA);
-#endif
 	}
 }
 
 void wspr_tx_enable(si5351_clock clk)
 {
-	if (wspr_slot_type[now_slot] != WSPR_TX_NONE && 
-		wspr_slot_freq[now_slot][clk] != 0)
+	if (wspr_slot_type[slot_now] != WSPR_TX_NONE && 
+		wspr_slot_freq[slot_now][clk] != 0)
 	{
 		LOG_I("TX WSPR start CLK%d: slot %d, freq %.6fMHz + %dHz\n", 
-				clk, now_slot, 
-				wspr_slot_freq[now_slot][clk] / 1000000.0, 
-				wspr_slot_band[now_slot]);
+				clk, slot_now, 
+				wspr_slot_freq[slot_now][clk] / 1000000.0, 
+				wspr_slot_band[slot_now]);
 
 //		si5351.drive_strength(clk, SI5351_DRIVE_8MA); 			// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
 		si5351.set_clock_pwr(clk, 1);
 		si5351.output_enable(clk, 1);
-#ifdef FEATURE_NO_KLIK
-		si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);	// slow step tx on
-		si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
-		si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);
-#endif
 		si5351.drive_strength(clk, SI5351_DRIVE_8MA);
 	}
  }
 
 void wspr_tx_disable(si5351_clock clk)
 {
-#ifdef FEATURE_NO_KLIK
-	si5351.drive_strength(clk, SI5351_DRIVE_6MA); delay(7);		// slow step tx off
-	si5351.drive_strength(clk, SI5351_DRIVE_4MA); delay(7);
-	si5351.drive_strength(clk, SI5351_DRIVE_2MA); delay(7);
-#endif
 	si5351.output_enable(clk, 0);
 	si5351.set_clock_pwr(clk, 0);
 }
@@ -1108,7 +1233,7 @@ void ssd1306_main_window()
 	}
 
 	// Display the WSPR Call, Locator and Power in dBm
-	sprintf(buffer, "%s/%s/%ddBm", config.call, config.qth, config.power);
+	sprintf(buffer, "%s/%s/%ddBm", config.call.c_str(), config.qth.c_str(), config.power);
 	ssd1306_center_string(buffer, SCREEN_HEIGHT-12);
 
 	if (wspr_symbol_index != 0)
@@ -1118,15 +1243,15 @@ void ssd1306_main_window()
 		display.drawLine(4, y1, slot_sec+4, y1, WHITE);
 		display.drawLine(4, y2, slot_sec+4, y2, WHITE);
 		display.invertDisplay(true);		// At TX invert the display collors
-		next_tx_slot = now_slot;
+		next_tx_slot = slot_now;
 	}
 	else
 	{
 		// Calculate the next tx time and slot
 		int	wait_sec = 120 - slot_sec;			// time in this slot
-		for (auto x = 0; x < WSPR_SLOTS_MAX; ++x)
+		for (auto x = 0; x < WSPR_SLOTS_HOUR; ++x)
 		{
-			next_tx_slot = (now_slot + x) % WSPR_SLOTS_MAX;
+			next_tx_slot = (slot_now + x) % WSPR_SLOTS_HOUR;
 			if (wspr_slot_type[next_tx_slot] != WSPR_TX_NONE) 
 				break;
 			wait_sec += 120;
@@ -1218,7 +1343,7 @@ void ssd1306_wifi_page()
 	ssd1306_display_on();
 	display.display();
 
-	delay(2000);
+	delay(3000);
 }
 
 // PSTR("%lu;%s;%ld;%S")
@@ -1255,13 +1380,13 @@ void ssd1306_printf_P(int wait, PGM_P format, ...)
 	ssd1306_display_on();
 	display.display();
 
-#ifdef DEBUG_ESP_PORT
-	LOG_I("SSD1306[[ ");
-	if (txt1 != NULL)	LOG_I("%s",txt1);
-	if (txt2 != NULL) {	LOG_I(" / "); LOG_I("%s",txt2); }
-	if (txt3 != NULL) {	LOG_I(" / "); LOG_I("%s",txt3); }
-	LOG_I(" ]](%dms)\n", wait);
-#endif
+// #ifdef DEBUG_ESP_PORT
+// 	LOG_I("SSD1306[[ ");
+// 	if (txt1 != NULL)	LOG_I("%s",txt1);
+// 	if (txt2 != NULL) {	LOG_I(" / "); LOG_I("%s",txt2); }
+// 	if (txt3 != NULL) {	LOG_I(" / "); LOG_I("%s",txt3); }
+// 	LOG_I(" ]](%dms)\n", wait);
+// #endif
 
 	if (wait >= 0)
 		delay(wait);
@@ -1284,3 +1409,111 @@ void ssd1306_display_off()
 	display.display();
 	display_status = DISPLAY_OFF;
 }
+
+
+/*
+curl -s http://pe0fko.nl/wspr/id/client_6479671_NL.json
+{	"chipid":8065906
+,	"call":"PE0FKO"
+,	"prefix":""
+,	"suffix":""
+,	"locatorXX":"JO32CD"
+,	"power":"10"
+,	"txenable":true
+,	"hostname":"wsprtx"
+
+,	"timezones":[
+	{"start":0,"end":6,"clk":0,"list":"clk0N"},
+	{"start":6,"end":18,"clk":0,"list":"clk0D"},
+	{"start":18,"end":24,"clk":0,"list":"clk0N"},
+	{"start":0,"end":24,"clk":1,"list":"clk1"},
+	{"start":0,"end":24,"clk":2,"list":"clk2"}	]
+
+,	"zones": [	[ 0,  6, 0, "clk0N"],
+			[ 6, 18, 0, "clk0D"], 
+			[18, 24, 0, "clk0N"],
+			[ 0, 24, 1, "clk1"], 
+			[ 0, 24, 2, "clk2"]
+		 ]
+,	"clk0D":[7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14]
+,	"clk0N":[7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14]
+,	"clk1":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+,	"clk2":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+,	"wsprtype":[2,2,2, 2,2,2, 3,3,3, 2,2,2, 2,2,2, 2,2,2, 2,2,2, 2,2,2, 2,2,2, 2,2,2]
+,	"rndseed":19561113
+,	"displayoff":240
+,	"freq_correction":-195
+,	"temp_wspr_band":21
+,	"temp_wspr_clk":0
+,	"temp_correction":0.0
+}
+*/
+
+/*
+curl -s http://ipinfo.io/json|jq
+{
+  "ip": "89.99.108.64",
+  "hostname": "89-99-108-64.cable.dynamic.v4.ziggo.nl",
+  "city": "Zutphen",
+  "region": "Gelderland",
+  "country": "NL",
+  "loc": "52.1383,6.2014",
+  "org": "AS33915 Vodafone Libertel B.V.",
+  "postal": "7201",
+  "timezone": "Europe/Amsterdam",
+  "readme": "https://ipinfo.io/missingauth"
+}
+*/
+
+/*
+curl -s http://api.sunrise-sunset.org/json?lat=52.1383\&lng=6.2014\&formatted=1\&tzid=Europe/Amsterdam|jq
+{
+  "results": {
+    "sunrise": "6:39:54 AM",
+    "sunset": "8:31:24 PM",
+    "solar_noon": "1:35:39 PM",
+    "day_length": "13:51:30",
+    "civil_twilight_begin": "6:05:53 AM",
+    "civil_twilight_end": "9:05:25 PM",
+    "nautical_twilight_begin": "5:21:32 AM",
+    "nautical_twilight_end": "9:49:47 PM",
+    "astronomical_twilight_begin": "4:31:40 AM",
+    "astronomical_twilight_end": "10:39:38 PM"
+  },
+  "status": "OK",
+  "tzid": "Europe/Amsterdam"
+}
+*/
+
+/*
+curl -s http://pe0fko.nl/wspr/id/client_6479671_NL.json
+{	"chipid":8065906
+,	"call":"PE0FKO"
+,	"prefix":""
+,	"suffix":""
+,	"locatorXX":"JO32CD"
+,	"power":"10"
+,	"txenable":true
+,	"hostname":"wsprtx"
+
+,	"zones": [	[ 0,  6, 0, "clk0N"],
+			[ 6, 18, 0, "clk0D"], 
+			[18, 24, 0, "clk0N"],
+			[ 0, 24, 1, "clk1"], 
+			[ 0, 24, 2, "clk2"]
+		 ]
+,	"clk0D":[7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14, 7,28,14]
+,	"clk0N":[7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14, 7,3,14]
+,	"clk1":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+,	"clk2":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+,	"wsprtype":[2,2,2, 2,2,2, 3,3,3, 2,2,2, 2,2,2, 2,2,2, 2,2,2, 2,2,2, 2,2,2, 2,2,2]
+,	"rndseed":19561113
+,	"displayoff":240
+,	"freq_correction":-195
+,	"temp_wspr_band":21
+,	"temp_wspr_clk":0
+,	"temp_correction":0.0
+}
+*/
