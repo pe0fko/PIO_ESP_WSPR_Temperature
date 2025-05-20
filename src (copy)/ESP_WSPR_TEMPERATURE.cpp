@@ -77,7 +77,14 @@ const	char	localConfig[] = R"(
 ,       "displayoff":300
 ,       "freq_correction":762
 ,		"timezones":[
-		{"start":0,"end":6,"clk":0,"list":"clk0N"},
+		{
+			"start":"11:55",
+			"sunrise":-1:30,
+			"sunset":"1:00",
+			"end":"12:05",
+			"clk":0,
+			"list":"clk0N"
+		},
 		{"start":6,"end":18,"clk":0,"list":"clk0D"},
 		{"start":18,"end":24,"clk":0,"list":"clk0N"},
 		{"start":0,"end":24,"clk":1,"list":"clk1"},
@@ -263,7 +270,6 @@ void		makeSlotPlanClk(int clk, const char* zone);
 void		makeSlotPlanTemp();
 int			getWsprSlotType(int type);
 uint32_t	getWsprBandFreq(int band);
-void		printSlotPlan();
 void		jsonSetConfig(String json);
 const char* getJsonClkArray(int clk);
 void		setSlotTime();
@@ -445,15 +451,17 @@ uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 
 bool loadWebConfigData()
 {
-	String URL(URL_BASE);
+//	String URL(URL_BASE);
+	String URL("https://pe0fko.nl/wspr/id/client_");
+
 	URL.concat(String(ESP.getChipId()));
 	URL.concat('_');
 	URL.concat(URL_ID);
 	URL.concat(".json");
 
 	String page;
-	if (QTH.getWebPage(page, URL) == HTTP_CODE_OK) {
-		jsonSetConfig(page);
+	if (QTH.fetchWebPage(page, URL) == HTTP_CODE_OK) {
+			jsonSetConfig(page);
 	} else {
 		LOG_E("Error loading web config, from: %s\n", page.c_str());
 		// displayMessage(1000, "E: JSON");
@@ -505,12 +513,12 @@ void jsonSetConfig(String jsonString)
 	if (jsonDoc["locator"].is<const char*>()) 
 	{
 		config.qth = jsonDoc["locator"]	| "JO32xx";
-		Serial.printf("Config locator: %s\n", config.qth.c_str());
+		Serial.printf("locator: by config, %s\n", config.qth.c_str());
 	}
 	else 
 	{
-		Serial.printf("IP locator: by QTH\n");
 		config.qth = QTH.getQthLoc();
+		Serial.printf("locator: by QTH.getQthLoc(), %s\n", config.qth.c_str());
 	}
 
 	// Display the config data
@@ -536,7 +544,7 @@ void jsonSetConfig(String jsonString)
 		randomSeed(config.randomSeed);
 	}
 
-	if ( ! config.hostname.isEmpty())
+	if ( config.hostname.isEmpty() == false )
 	{
 		// LOG_I("INIT: hostname=%s\n", config.hostname.c_str());
 		WiFi.setHostname(config.hostname.c_str());					// Set WiFi Hostname.
@@ -566,57 +574,22 @@ void makeSlotPlan()
 		makeSlotPlanTemp();			// Make a plan for the temperature TX
 	}
 
-	printSlotPlan();		// Print the slot plan if needed
-}
-
-void makeSlotPlanZone()
-{
-	// Scan the time zones and make a plan for the clock
-	if (jsonDoc["timezones"].is<JsonArray>())
+	// Print the slot plan if needed
+#ifdef FEATURE_PRINT_TIMESLOT
+	LOG_I("Time Slot:");
+	for(uint8_t i=0; i < WSPR_SLOTS_HOUR; ++i) 
 	{
-		// Check if this is the end of the last hour slot.
-		int hour = hour_now;	// Get the current hour from the system time
-		if (slot_now == 29) hour = (hour + 1) % 24;		// Next hour
-		LOG_I("Slot Plan Hour: %02d, Slot %d\n", hour, slot_now);
-
-		JsonArray timezones = jsonDoc["timezones"];
-		// JsonArray zones = jsonDoc["timezones"];
-		LOG_I("JSON Zone:"); serializeJson(timezones, Serial);	LOG_I("\n");
-		// printJsonDoc("Zones", zones.to<JsonObject>());
-
-		
-		for (JsonObject tz : timezones) 
-		{
-			int start = tz["start"];			// 0-23
-			int end = tz["end"];				// 0-24
-			int clk = tz["clk"];     			// 0-2
-			const char* list = tz["list"];		// "clk0N", etc.
-			
-			if ((start >= 0) &&	(start < 23) 
-			&&	(end >= 0) &&	(end <= 24)
-			&&	(start < end))
-			{
-				LOG_I("Zone: Start: %2d, End: %2d, Name: %s, now=%d\n", 
-					start, end, list, hour);
-
-				if (hour >= start && hour < end)
-				{
-					LOG_I("Make zone: %s, clk=%d\n", 
-						list, clk);
-
-					makeSlotPlanClk(clk, list);	// Make a plan for the clock
-				}
-			}
-//			else
-		}
+		if ((i % 4) == 0) LOG_I("\n");
+		LOG_I("    %02d:T%d[%d,%d,%d]+%d", i, 
+				wspr_slot_type[i], 
+				wspr_slot_freq[i][0], 
+				wspr_slot_freq[i][1], 
+				wspr_slot_freq[i][2], 
+				wspr_slot_band[i]
+		);
 	}
-	else
-	{
-		LOG_I("No zone found, use default\n");
-		makeSlotPlanClk(0, "clk0");	// Make a plan for the clock 0
-		makeSlotPlanClk(1, "clk1");	// Make a plan for the clock 1
-		makeSlotPlanClk(2, "clk2");	// Make a plan for the clock 2
-	}
+	LOG_I("\n");
+#endif
 }
 
 
@@ -634,7 +607,60 @@ makeSlotPlanEmpty()
 	}
 }
 
-#if 1
+
+void makeSlotPlanZone()
+{
+	// Scan the time zones and make a plan for the clock
+	if (jsonDoc["timezones"].is<JsonArray>())
+	{
+		// Check if this is the end of the last hour slot.
+		int hour = hour_now;	// Get the current hour from the system time
+		if (slot_now == 29) hour = (hour + 1) % 24;		// Next hour
+		LOG_I("Slot Plan Hour: %02d, Slot %d\n", hour, slot_now);
+
+		JsonArray timezones = jsonDoc["timezones"];
+		// JsonArray zones = jsonDoc["timezones"];
+		// LOG_I("JSON Zone:"); serializeJson(timezones, Serial);	LOG_I("\n");
+		// printJsonDoc("Zones", zones.to<JsonObject>());
+		
+		for (JsonObject tz : timezones) 
+		{
+			int start = tz["start"];			// 0-23
+			int end = tz["end"];				// 0-24
+			int clk = tz["clk"];     			// 0-2
+			const char* list = tz["list"];		// "clk0N", etc.
+
+			// Check validity of the zone
+			if ((start >= 0) &&	(start < 23) 
+			&&	(end >= 0) &&	(end <= 24)
+			&&	(start < end))
+			{
+				// LOG_I("Zone: Start: %2d, End: %2d, Name: %s, now=%d\n", 
+				// 	start, end, list, hour);
+
+				if (hour >= start && hour < end)
+				{
+					LOG_I("Make zone: %s, clk=%d\n", 
+						list, clk);
+
+					makeSlotPlanClk(clk, list);	// Make a plan for the clock
+				}
+			}
+			else
+			{
+				LOG_E("Zone: Start: %2d, End: %2d, Name: %s, now=%d\n", 
+					start, end, list, hour);
+			}
+		}
+	}
+	else
+	{
+		LOG_I("No zone found, use default\n");
+		makeSlotPlanClk(0, "clk0");	// Make a plan for the clock 0
+		makeSlotPlanClk(1, "clk1");	// Make a plan for the clock 1
+		makeSlotPlanClk(2, "clk2");	// Make a plan for the clock 2
+	}
+}
 
 void 
 makeSlotPlanClk(int clk, const char* zone)
@@ -666,10 +692,6 @@ makeSlotPlanClk(int clk, const char* zone)
 		return;
 	}
 }
-
-#else
-
-#endif
 
 
 void 
@@ -745,6 +767,7 @@ getWsprBandFreq(int band)
 	return WSPR_TX_FREQ_NONE;
 }
 
+
 int
 getWsprSlotType(int type)
 {
@@ -754,26 +777,6 @@ getWsprSlotType(int type)
 		type = WSPR_TX_NONE;
 	}
 	return type;
-}
-
-void 
-printSlotPlan()
-{
-#ifdef FEATURE_PRINT_TIMESLOT
-	LOG_I("Time Slot:");
-	for(uint8_t i=0; i < WSPR_SLOTS_HOUR; ++i) 
-	{
-		if ((i % 4) == 0) LOG_I("\n");
-		LOG_I("    %02d:T%d[%d,%d,%d]+%d", i, 
-				wspr_slot_type[i], 
-				wspr_slot_freq[i][0], 
-				wspr_slot_freq[i][1], 
-				wspr_slot_freq[i][2], 
-				wspr_slot_band[i]
-		);
-	}
-	LOG_I("\n");
-#endif
 }
 
 
@@ -812,10 +815,16 @@ void loop()
 			firstBoot = false;
 
 			setSlotTime();				// Get the current time and slot
-			QTH.begin();				// Get the QTH locator from the internet
+			if (!QTH.begin())			// Get the QTH locator from the internet
+			{
+				LOG_E("Error loading QTH locator\n");
+				ssd1306_printf_P(1000, PSTR("Error loading QTH"));
+			}
+
 			if (loadWebConfigData())	// Load the config data
 				makeSlotPlan();			// Make a plan for the this TX hour
-#if 1
+
+#if 0
 			// Get the sunrise/sunset data from the web
 			if (QTH.getDayligth())
 			{
