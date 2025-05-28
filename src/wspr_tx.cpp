@@ -93,7 +93,8 @@ void wspr_tx_init(String& call)
 {
 	if (si5351_ready())
 	{
-		LOG_I("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call.c_str(), config.qth.c_str(), config.power);
+		// LOG_D("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call.c_str(), config.qth.c_str(), config.power);
+
 		wspr.wspr_encode(call.c_str(), config.qth.c_str(), config.power, wspr_symbols);
 
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
@@ -130,6 +131,11 @@ void wspr_tx_bit()
 	{
 		if (wspr_symbol_index == 0)   							// On first bit enable the tx output.
 		{
+// //// DEBUG ///////////////////////////////////////////////////////////////////////////////////////////////////
+// 			struct timeval tv;
+// 			gettimeofday(&tv, NULL);					// Get the current time in sec and usec
+// 			LOG_D("WSPR start time [%ld us] %s", tv.tv_usec, ctime(&tv.tv_sec));
+// //// DEBUG ///////////////////////////////////////////////////////////////////////////////////////////////////
 			wspr_tx_enable(SI5351_CLK0);
 			wspr_tx_enable(SI5351_CLK1);
 			wspr_tx_enable(SI5351_CLK2);
@@ -150,7 +156,7 @@ void wspr_tx_bit()
 		wspr_symbol_index = 0;
 		wspr_tx_counter += 1;
 
-		LOG_I("TX WSPR #%d Ended.\n", wspr_tx_counter);
+		// LOG_D("TX WSPR #%d Ended.\n", wspr_tx_counter);
 	}
 }
 
@@ -183,10 +189,10 @@ void wspr_tx_enable(si5351_clock clk)
 	if (wspr_slot_type[slot_now] != WSPR_TX_NONE && 
 		wspr_slot_freq[slot_now][clk] != 0)
 	{
-		LOG_I("TX WSPR start CLK%d: slot %d, freq %.6fMHz + %dHz\n", 
-				clk, slot_now, 
-				wspr_slot_freq[slot_now][clk] / 1000000.0, 
-				wspr_slot_band[slot_now]);
+		// LOG_D("TX WSPR start CLK%d: slot %d, freq %.6fMHz + %dHz\n", 
+		// 		clk, slot_now, 
+		// 		wspr_slot_freq[slot_now][clk] / 1000000.0, 
+		// 		wspr_slot_band[slot_now]);
 
 //		si5351.drive_strength(clk, SI5351_DRIVE_8MA); 			// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
 		si5351.set_clock_pwr(clk, 1);

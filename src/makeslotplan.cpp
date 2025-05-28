@@ -94,9 +94,15 @@ void makeSlotPlanZone()
 
 			int clk = tz["clk"] | SI5351_CLK0;
 
-			LOG_I("Freq-List: %s on clk:%d, start=%02d:%02d, end=%02d:%02d, ", 
-				listName, clk, start/30, (start%30)*2, end/30, (end%30)*2);
-			if (display_status == DISPLAY_ON)	{ serializeJson(jsonList, Serial); LOG_I("\n"); }
+#ifndef NDEBUG
+			if (display_status == DISPLAY_ON) 
+			{
+				LOG_I("Freq-List: %s on clk:%d, start=%02d:%02d, end=%02d:%02d, ", 
+					listName, clk, start/30, (start%30)*2, end/30, (end%30)*2);
+				serializeJson(jsonList, Serial); 
+				LOG_I("\n");
+			}
+#endif
 
 			// size_t idx = start % jsonList.size();	// start in the correct list beginning
 			size_t idx = 0;			// start in the hour band sequence

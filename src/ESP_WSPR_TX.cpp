@@ -98,7 +98,7 @@ void setup()
 #endif
 	delay(1000);
 
-	LOG_I("=== PE0FKO, TX WSPR temperature coded\n");
+	LOG_I("\n\n=== PE0FKO, TX WSPR temperature coded\n");
 	LOG_I("=== Version: " VERSION ", Build at: " __DATE__ " " __TIME__ "\n");
 	LOG_I("=== Config: %s - %s - %ddBm\n", config.call.c_str(), config.qth.c_str(), config.power);
 	LOG_I("=== ChipId: %d, Hostname: %s.local\n", ESP.getChipId(), config.hostname.c_str() );
@@ -211,7 +211,7 @@ void jsonSetConfig(String jsonString)
 void loop()
 {
 	enum	state_t {	sIdle, sWaitWifiConnect, sWifiConnect, sWifiIpAddress, sWifiNtpTimeSet,
-						sGetQTHLocator, sLoadConfig, sWifiDefaultLoop, sWifiDisconnect };
+						sGetQTHLocator, sLoadConfig, sSetOneSecondTick, sWifiDefaultLoop, sWifiDisconnect };
 	static	state_t	state = sIdle;
 
 	switch (state) 
@@ -274,7 +274,7 @@ void loop()
 			{
 				LOG_E("Error loading QTH locator\n");
 				ssd1306_printf_P(10*1000, PSTR("Error loading QTH"));
-				state = sWifiDefaultLoop;		//TODO: Error state!
+				state = sSetOneSecondTick;		//TODO: Error state!
 			}
 			break;
 
@@ -297,15 +297,26 @@ void loop()
 			if (loadWebConfigData())				// Load the config data
 				makeSlotPlan();						// Make a plan for the this TX hour
 
-			state = sWifiDefaultLoop;
+			state = sSetOneSecondTick;
 			break;
 
-		case sWifiDefaultLoop:
-			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
+		case sSetOneSecondTick:
+		{	struct timeval tv;
+			gettimeofday(&tv, NULL);					// Get the current time in sec and usec
 
-			loop_1s_tick();
+			// tv_usec should be "This is the rest of the elapsed time (a fraction of a second), 
+			// represented as the number of microseconds. It is always less than one million."
+			timer_us_one_second = micros();				// Initialize the timer only ones!
+			timer_us_one_second -= tv.tv_usec;			// Correct the us to the sec tick
+
+			state = sWifiDefaultLoop;
+		}	break;
+
+		case sWifiDefaultLoop:
+			if (!semaphore_wifi_connected) { state = sWifiDisconnect; timer_us_one_second = 0; break; }
+
+			// loop_1s_tick();
 			loop_20ms_tick();
-			// loop_ds18b20();								// Empty
 
 			break;
 
@@ -319,6 +330,8 @@ void loop()
 	}
 
 	loop_wspr_tx();
+	loop_1s_tick();
+	// loop_ds18b20();								// Empty
 	loop_display();
 	loop_wifi();
 }
@@ -338,25 +351,21 @@ void setSlotTime()
 // Secure one second function call
 void loop_1s_tick() 
 {
-	if ((micros() - timer_us_one_second) < value_us_one_second)
-		return;
-
+	if ((timer_us_one_second == 0)
+	||	(micros() - timer_us_one_second) < value_us_one_second) return;
 	timer_us_one_second +=	value_us_one_second;
 
-
-
-
-
-	// LOG_I("timer_us_one_second=%d\n", timer_us_one_second)
-
-
-
-
+	// /////////////////////// DEBUG
+	// struct timeval tv;
+	// gettimeofday(&tv, NULL);					// Get the current time in sec and usec
+	// LOG_I("timer_us_one_second=%ld, sec=%lld, us=%ld, TIME: %s", 
+	// 	timer_us_one_second, tv.tv_sec, tv.tv_usec, ctime(&tv.tv_sec));
+	// ///////////////////////
 
 	setSlotTime();						// Get the current time and slot
 
 	//++ At every 2 minute interval start a WSPR message, if slot is richt.
-	if (slot_sec == 0)												// First second of the 2 minute interval clock
+	if (slot_sec == 0)								// First second of the 2 minute interval clock
 	{
 		String Call;
 
@@ -378,12 +387,16 @@ void loop_1s_tick()
 			Call += config.call;
 			Call += config.suffix;
 			Call += '>';
+			break;
+		default:
+			break;
 		}
 
 		if (!Call.isEmpty()) 
 		{
 			wspr_tx_init(Call);
-			LOG_I("WSPR-Time: Hour:%u Slot:%u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%d)Hz\n", 
+
+			LOG_I("WSPR-Time: Hour:%2u Slot:%2u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%d)Hz\n", 
 				hour_now, slot_now, 
 				Call.c_str(), 
 				config.qth.c_str(),

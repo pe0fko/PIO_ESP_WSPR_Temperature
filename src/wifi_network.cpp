@@ -4,15 +4,18 @@ volatile	bool	semaphore_wifi_connected		= false;
 volatile	bool	semaphore_wifi_ip_address		= false;
 volatile	bool	semaphore_wifi_ntp_received		= false;
 
-static		WiFiEventHandler	mConnectHandler;							// WiFi event handler for the Connect
-static		WiFiEventHandler	mDisConnectHandler;							// WiFi event handler for the Disconnect
-static		WiFiEventHandler	mGotIpHandler;								// WiFi event handler for the GotIP
+static		WiFiEventHandler	mConnectHandler;				// WiFi event handler for the Connect
+static		WiFiEventHandler	mDisConnectHandler;				// WiFi event handler for the Disconnect
+static		WiFiEventHandler	mGotIpHandler;					// WiFi event handler for the GotIP
 
+static		void	onWifiConnect(const WiFiEventStationModeConnected& ssid);
+static		void	onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo);
+static		void	onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo);
+static		void	cb_ntp_time_is_set(bool from_sntp);
 
 //---------------------------------------------------------------------------------
 //---- Setup WiFi Station Mode
 //---------------------------------------------------------------------------------
-
 void init_wifi()
 {
 	LOG_I("WiFi setup station mode\n");
@@ -21,17 +24,18 @@ void init_wifi()
 	semaphore_wifi_ip_address = false;
 	semaphore_wifi_ntp_received = false;
 
-	// WiFi.disconnect(false);										// Cleanup old info
+	// WiFi.disconnect(false, true);								// Cleanup old wifi credentials in eeprom
+	WiFi.persistent(false);
 	WiFi.mode(WIFI_STA);										// Set WiFi to station mode
 	WiFi.setHostname(config.hostname.c_str());					// Set Hostname.
 	WiFi.setAutoReconnect(true);								// Keep WiFi connected
+	// WiFi.waitForConnectResult();
 
 	// Register WiFi event handlers
 	mConnectHandler		= WiFi.onStationModeConnected(onWifiConnect);
-	mGotIpHandler		= WiFi.onStationModeGotIP(onWiFiGotIP);
 	mDisConnectHandler	= WiFi.onStationModeDisconnected(onWifiDisconnect);
+	mGotIpHandler		= WiFi.onStationModeGotIP(onWiFiGotIP);
 
-	// Try to startup the WiFi Multi connection with the strongest AP found.
 	addAllAPs();												// Add all APs to the list
 }
 
@@ -91,17 +95,10 @@ void onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo)
 	// );
 
 	// // TESTING
-	// Serial.println("==== Test DNS: ");
-	ip_addr_t hostIP;
-	dns_gethostbyname("time.google.com", &hostIP, NULL, 0);	// Get the DNS IP address
-	// // IPAddress hostIP;
-	// // WiFi.hostByName("ipinfo.io", hostIP);
-	// // Serial.println(hostIP);
-	// Serial.println(" ====");
+	// ip_addr_t hostIP;
+	// dns_gethostbyname("time.google.com", &hostIP, NULL, 0);	// Get the DNS IP address
 	// // TESTING
 
-	// sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);	// Smooth time sync
-	// sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);	// Immediate time sync
 	settimeofday_cb(cb_ntp_time_is_set);				// Call-back NTP function
 	configTime(MYTZ, "time.google.com", "nl.pool.ntp.org");
 
@@ -111,25 +108,27 @@ void onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo)
 // callback routine - arrive here whenever a successful NTP update has occurred
 void cb_ntp_time_is_set(bool from_sntp)
 {
+	// tv_usec should be "This is the rest of the elapsed time (a fraction of a second), 
+	// represented as the number of microseconds. It is always less than one million."
 	struct timeval tv;
 	gettimeofday(&tv, NULL);					// Get the current time in sec and usec
-	timer_us_one_second = micros();				// Initialize the timer only ones!
 
+	LOG_I("NTP Sync update timer_us_one_second = %ld\n", timer_us_one_second);
+	if (timer_us_one_second != 0) {
+		uint32_t old = timer_us_one_second;
 
+		timer_us_one_second = micros();				// Initialize the timer only ones!
+		timer_us_one_second -= tv.tv_usec;			// Correct the us to the sec tick
 
-	timer_us_one_second -= tv.tv_usec;			// Correct the us to the sec tick
+		old -= timer_us_one_second;
+		LOG_I("\tDiff = %ld\n", old);
+	}
 
+	// LOG_I("NTP update at [%lldsec] [%ldus] %s", tv.tv_sec, tv.tv_usec, ctime(&tv.tv_sec));
+	LOG_I("NTP update [%ld us] %s", tv.tv_usec, ctime(&tv.tv_sec));
 
-
-
-
-	LOG_I("NTP update at [%dus] [%d] %s", tv.tv_usec, timer_us_one_second, ctime(&tv.tv_sec));
-
-
-
-
-
-
+	// LOG_I("timer_us_one_second=%ld, sec=%lld, us=%ld, TIME: %s", 
+	// 	timer_us_one_second, tv.tv_sec, tv.tv_usec, ctime(&tv.tv_sec));
 
 	semaphore_wifi_ntp_received = true;
 }

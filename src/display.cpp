@@ -1,5 +1,5 @@
 #include "header.h"
-#include <Adafruit_GFX.h>			// Adafruit GFX Library               1.11.5
+#include <Adafruit_GFX.h>			// Adafruit GFX Library
 #include <Adafruit_SSD1306.h>		// Adafruit SSD1306 Wemos Mini OLED
 #include <DallasTemperature.h>		// Temperature sensor Dallas DS18B20
 
@@ -28,7 +28,7 @@ void setup_display()
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 	display.setRotation(0);						// Display normal wide screen
 
-	ssd1306_printf_P(4000, PSTR("WSPR TX\nID %d\n%s.local"), ESP.getChipId(), config.hostname.c_str());
+	ssd1306_printf_P(4000, PSTR("PE0FKO WSPR TX\nID %d\n%s.local"), ESP.getChipId(), config.hostname.c_str());
 }
 
 //---------------------------------------------------------------------------------

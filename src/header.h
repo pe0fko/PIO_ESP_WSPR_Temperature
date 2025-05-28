@@ -130,7 +130,6 @@ extern		float				temperature_now;
 typedef enum { DISPLAY_OFF,	DISPLAY_ON }	display_status_t;
 extern		display_status_t display_status;
 
-
 // Forward reference
 void		setup_wifi();
 void		init_wifi();
@@ -147,27 +146,19 @@ void		loop_ds18b20();
 void		ssd1306_main_window();
 void		ssd1306_center_string(const char* buffer, uint8_t Y, uint8_t size);
 void		ssd1306_background();
-// void		ssd1306_wifi_page();
 void		ssd1306_printf_P(int wait, PGM_P format, ...);
 void		ssd1306_display_on();
 void		ssd1306_display_off();
 
-// void		setupTemperature();
 void		readTemperature();
 void		ssd1306_text(uint16_t delay_ms, const char* txt1, const char* txt2=NULL);
 void		setupWifiStatioMode();
 void		stopWifiStatioMode();
-void		onWifiConnect(const WiFiEventStationModeConnected& ssid);
-void		onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo);
-void		onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo);
 void		SetupSi5351();
 bool		si5351_ready();
-void		cb_ntp_time_is_set(bool from_sntp);
 void		loop_wspr_tx();
 void		loop_1s_tick();
 void		loop_20ms_tick();
-// void		loop_wifi_tick();
-// void		loop_led_tick();
 void		wspr_tx_bit();
 void		wspr_tx_init(String& call);
 void		wspr_tx_disable(si5351_clock clk);
@@ -183,8 +174,11 @@ bool		loadWebConfigData();
 #ifdef DEBUG_ESP_PORT
 // Put the strings in PROGMEM, slow but free some (constant) ram memory.
 //  #define LOG_I(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
+#ifdef NDEBUG
   #define LOG_I(F, ...)		{ if (display_status == DISPLAY_ON) DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
-//   #define LOG_I(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
+#else
+  #define LOG_I(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR(F), ## __VA_ARGS__); }
+#endif
   #define LOG_D(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("DEBUG: " F), ## __VA_ARGS__); }
   #define LOG_W(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("WARNING: " F), ## __VA_ARGS__); }
   #define LOG_E(F, ...)		{ DEBUG_ESP_PORT.printf(PSTR("ERROR: " F), ## __VA_ARGS__); DEBUG_ESP_PORT.flush(); delay(100); }	// delay!!
