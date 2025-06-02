@@ -57,6 +57,7 @@ struct	config_t
 	String		prefix;
 	String		suffix;
 	String		qth;
+	String		loc_lat_lon;
 	uint8_t		power;
 	uint32_t	freq_cal_factor;
 	uint32_t	randomSeed;
@@ -158,16 +159,16 @@ void		SetupSi5351();
 bool		si5351_ready();
 void		loop_wspr_tx();
 void		loop_1s_tick();
-void		loop_20ms_tick();
+// void		loop_20ms_tick();
 void		wspr_tx_bit();
-void		wspr_tx_init(String& call);
+void		wspr_tx_init(const char* call);
 void		wspr_tx_disable(si5351_clock clk);
 void		wspr_tx_freq(si5351_clock clk);
 void		wspr_tx_enable(si5351_clock clk);
 void		ssd1306_center_string(const char* buffer, uint8_t y, uint8_t size=1);
 void		ssd1306_background();
 void		makeSlotPlan();
-void		jsonSetConfig(String json);
+// bool		jsonSetConfig(String json);
 void		setSlotTime();
 bool		loadWebConfigData();
 

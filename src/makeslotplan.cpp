@@ -38,7 +38,7 @@ void makeSlotPlan()
 	for(uint8_t i=0; i < WSPR_SLOTS_HOUR; ++i) 
 	{
 		if ((i % 3) == 0) LOG_I("\n");
-		LOG_I("\t%02d:T%d[%d,%d,%d]+%d", i, 
+		LOG_I("\t%02d:T%1d[%d,%d,%d]+%03d", i, 
 				wspr_slot_type[i], 	wspr_slot_freq[i][0],	wspr_slot_freq[i][1],
 				wspr_slot_freq[i][2], wspr_slot_band[i]
 		);
@@ -66,7 +66,7 @@ void makeSlotPlanZone()
 	// Check if this is the end of the last hour slot.
 	int hour = hour_now;	// Get the current hour from the system time
 	if (slot_now == 29) hour = (hour + 1) % 24;		// Next hour
-	LOG_I("Slot Plan Hour: %02d, Slot %d\n", hour, slot_now);
+	LOG_I("Slot Plan Hour: %02dh (Slot %d)\n", hour, slot_now);
 
 	// Scan the time zones and make a plan for the clock
 	if (jsonDoc["timezones"].is<JsonArray>())

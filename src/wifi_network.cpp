@@ -113,16 +113,16 @@ void cb_ntp_time_is_set(bool from_sntp)
 	struct timeval tv;
 	gettimeofday(&tv, NULL);					// Get the current time in sec and usec
 
-	LOG_I("NTP Sync update timer_us_one_second = %ld\n", timer_us_one_second);
-	if (timer_us_one_second != 0) {
-		uint32_t old = timer_us_one_second;
+	// LOG_I("NTP Sync update timer_us_one_second = %ld\n", timer_us_one_second);
+	// if (timer_us_one_second != 0) {
+	// 	uint32_t old = timer_us_one_second;
 
-		timer_us_one_second = micros();				// Initialize the timer only ones!
-		timer_us_one_second -= tv.tv_usec;			// Correct the us to the sec tick
+	// 	timer_us_one_second = micros();				// Initialize the timer only ones!
+	// 	timer_us_one_second -= tv.tv_usec;			// Correct the us to the sec tick
 
-		old -= timer_us_one_second;
-		LOG_I("\tDiff = %ld\n", old);
-	}
+	// 	old -= timer_us_one_second;
+	// 	LOG_I("\tDiff = %ld\n", old);
+	// }
 
 	// LOG_I("NTP update at [%lldsec] [%ldus] %s", tv.tv_sec, tv.tv_usec, ctime(&tv.tv_sec));
 	LOG_I("NTP update [%ld us] %s", tv.tv_usec, ctime(&tv.tv_sec));

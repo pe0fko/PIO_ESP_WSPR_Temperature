@@ -73,23 +73,25 @@ config_t config	=
 			QTHLocator			QTH;										// Get the QTH locator from the internet
 			JsonDocument		jsonDoc;									// Allocate the JSON document
 
-static		uint32_t			timer_ms_20ms_loop		= 0;
-			uint32_t			timer_us_one_second		= 0;				// micros()
-static		uint32_t			timer_no_network		= 0;
+static		uint32_t			timer_ms_20ms_loop			= 0;
+			uint32_t			timer_us_one_second			= 0;			// micros()
+static		uint32_t			timer_no_network			= 0;
+static		uint32_t			timer_retry_config_load		= 0;
 
 uint8_t		hour_now;														// Time now in hour (0..23)
 uint8_t		slot_now;														// Time now in slot (0..29)
 uint8_t		slot_sec;														// Second in the slot (0..119)
+
+static	bool	sunrise_loaded		= false;
+
+// Forward definition
+static	void	loop_keys_tick();
 
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....
 //---------------------------------------------------------------------------------
 void setup()
 {
-	// pinMode(LED_BUILTIN, OUTPUT);				// LED on the ESP
-	// digitalWrite(LED_BUILTIN, HIGH);			// High is off!
-	// pinMode(BUTTON_INPUT, INPUT_PULLUP);		// Button for display on/off
-
 	Serial.begin(115200);
 	Serial.setTimeout(2000);
 	while(!Serial);
@@ -112,17 +114,15 @@ void setup()
 	LOG_I("=== Start looping...\n");
 }
 
-bool loadWebConfigData()
+bool loadJsonConfig(String& page)
 {
+	page.clear();
+
 	String URL("https://pe0fko.nl/wspr/id/client_");
 	URL += String(ESP.getChipId(), 10);
 	URL += "_NL.json";
 
-	String page;
-	if (QTH.fetchWebPage(page, URL) == HTTP_CODE_OK) 
-	{
-		jsonSetConfig(page);
-	} else 
+	if (QTH.fetchWebPage(page, URL) != HTTP_CODE_OK) 
 	{
 		LOG_E("Error loading web config, from: %s\n", URL.c_str());
 		ssd1306_printf_P(5*60*1000, PSTR("JSON\nERROR\nWebLoad"));	// 5min wait
@@ -132,8 +132,7 @@ bool loadWebConfigData()
 	return true;
 }
 
-
-void jsonSetConfig(String jsonString)
+bool jsonSetConfig(String jsonString)
 {
 	jsonDoc.clear();
 
@@ -141,7 +140,7 @@ void jsonSetConfig(String jsonString)
 	if (error != DeserializationError::Ok) {
 		LOG_E("Error Json Seserialize: %s\n", error.f_str());
 		// displayMessage(1000, "E: JSON");
-		return;
+		return false;
 	}
 
 	// LOG_I("JSON:"); serializeJson(jsonDoc, Serial);	LOG_I("\n");
@@ -157,6 +156,7 @@ void jsonSetConfig(String jsonString)
 	config.temp_cor			= jsonDoc["temp_correction"]	| 0.0;
 	config.wspr_enabled		= jsonDoc["wspr_tx_enabled"]	| true;
 	config.temp_enabled		= jsonDoc["temp_tx_enabled"]	| true;
+	config.qth				= jsonDoc["locator"]			| "";
 
 
 	// Add the slash char if needed in prefix & suffix
@@ -165,16 +165,22 @@ void jsonSetConfig(String jsonString)
 
 	// LOG_I("*********  prefix/siffix: -%s- -%s-\n", config.prefix.c_str(), config.suffix.c_str());
 
-	if (jsonDoc["locator"].is<const char*>()) 
-	{
-		config.qth = jsonDoc["locator"]	| "JO32";
-		LOG_I("QTH locator: by config file, %s\n", config.qth.c_str());
-	}
-	else
-	{
-		config.qth = QTH.getQthLoc();
-		LOG_I("QTH locator: by IP address config, %s\n", config.qth.c_str());
-	}
+	// LOG_I("QTH locator from config file is %s\n", config.qth.c_str());
+
+	// if (jsonDoc["locator"].is<const char*>()) 
+	// {
+	// 	config.qth = jsonDoc["locator"]	| "JO32";
+	// 	LOG_I("QTH locator: by config file, %s\n", config.qth.c_str());
+	// }
+	// else
+	// {
+	// 	config.qth = QTH.latLonToMaidenhead(QTH.getLoc());
+	// 	ssd1306_printf_P(4000, PSTR("IP QTH\n%s\n%s"), config.qth.c_str(), QTH.getCity().c_str() );
+	// 	LOG_I("QTH locator: by IP address config, %s\n", config.qth.c_str());
+	// }
+
+	// config.loc_lat_lon = QTH.MaidenheadTolatLon(config.qth);
+	// LOG_I("QTH loc_lat_lon: %s\n", config.loc_lat_lon.c_str());
 
 	// Display the config data
 	//=========================================================
@@ -199,19 +205,23 @@ void jsonSetConfig(String jsonString)
 		WiFi.setHostname(config.hostname.c_str());					// Set WiFi Hostname.
 		MDNS.setHostname(config.hostname.c_str());					// Set mDNS hostname (for next setting)
 	}
+
+	return true;
 }
 
 //---------------------------------------------------------------------------------
 //---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
 //---------------------------------------------------------------------------------
 
-// #define	TW	10
-#define	TW	1000
+#define	TW	200
+// #define	TW	1000
 
 void loop()
 {
-	enum	state_t {	sIdle, sWaitWifiConnect, sWifiConnect, sWifiIpAddress, sWifiNtpTimeSet,
-						sGetQTHLocator, sLoadConfig, sSetOneSecondTick, sWifiDefaultLoop, sWifiDisconnect };
+	enum	state_t {	sIdle, sWaitWifiConnect, sWifiConnect, sWifiIpAddress,
+						sLoadSunRise, sLoadLocation, sLoadConfigJSon, sWaitConfigReload, 
+						sLoadIpLocation, sMakeSlotPlan, sSetOneSecondTick, sDefaultLoop, 
+						sSlotSecond_0, sSlotSecond_111, sWifiDisconnect };
 	static	state_t	state = sIdle;
 
 	switch (state) 
@@ -222,6 +232,7 @@ void loop()
 			timer_no_network = millis();
 			state = sWaitWifiConnect;
 			break;
+
 
 		case sWaitWifiConnect:
 		{
@@ -245,10 +256,11 @@ void loop()
 			// }
 		}	break;
 
+
 		case sWifiConnect:
 			if (semaphore_wifi_ip_address) {
 				// ssd1306_wifi_page();
-				ssd1306_printf_P(4000, PSTR("IP:%s\nGW:%s\nRSSI:%d"),
+				ssd1306_printf_P(1000, PSTR("IP:%s\nGW:%s\nRSSI:%d"),
 					WiFi.localIP().toString().c_str(),
 					WiFi.gatewayIP().toString().c_str(),
 					WiFi.RSSI() );
@@ -256,51 +268,85 @@ void loop()
 			}
 			break;
 
+
 		case sWifiIpAddress:
 			if (semaphore_wifi_ntp_received) {
 				ssd1306_printf_P(TW, PSTR("WiFi\nNTP Time"));		//TODO:
-				state = sWifiNtpTimeSet;
+				state = sLoadConfigJSon;
 			}
 			break;
 
-		case sWifiNtpTimeSet:
+
+		case sLoadConfigJSon:
+		{	String page;
 			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
 
 			setSlotTime();						// Get the current time and slot
-			ssd1306_printf_P(TW, PSTR("Web API\nLoad\nSun rise/set"));
-
-			state = sGetQTHLocator;
-			if (!QTH.begin())					// Get the locator and sunrise/sunset API
-			{
-				LOG_E("Error loading QTH locator\n");
-				ssd1306_printf_P(10*1000, PSTR("Error loading QTH"));
-				state = sSetOneSecondTick;		//TODO: Error state!
-			}
-			break;
-
-		case sGetQTHLocator:
-			// ssd1306_printf_P(4000, PSTR("QTH locator\n%s\n%s"), QTH.getQthLoc().c_str(), QTH.getCity().c_str() );
-
-			if (QTH.getQthLoc() != config.qth)
-			{
-				ssd1306_printf_P(4000, PSTR("QTH locator\n%s\n%s"), QTH.getQthLoc().c_str(), QTH.getCity().c_str() );
-				// config.qth = QTH.getQthLoc();	//TODO: Check
-				LOG_I("New QTH locator: %s (@%s)\n", config.qth.c_str(), QTH.getCity().c_str());
-			}
-			state = sLoadConfig;
-			break;
-
-		case sLoadConfig:
-			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
-
 			ssd1306_printf_P(TW, PSTR("Web API\nLoad\nID:%d"), ESP.getChipId() );
-			if (loadWebConfigData())				// Load the config data
-				makeSlotPlan();						// Make a plan for the this TX hour
 
+			if (loadJsonConfig(page)) {				// Load the config data
+				// LOG_I("JSON Config: %s\n", page.c_str());
+				if (jsonSetConfig(page)) {
+					state = sLoadIpLocation;
+					break;
+				} else {
+					ssd1306_printf_P(2000, PSTR("Web API\nJSON\nError") );
+				}
+			} else {
+				ssd1306_printf_P(2000, PSTR("Web API\nLOAD\nError") );
+			}
+
+			// Try sometime later to load the config
+			timer_retry_config_load = millis();
+			state = sWaitConfigReload;
+
+		}	break;
+
+		case sWaitConfigReload:
+			if ((millis() - timer_retry_config_load) > 30*1000)
+				state = sLoadConfigJSon;
+			break;
+
+
+		case sLoadIpLocation:
+			// If no location in the json config file, then try to get
+			// the lat,lon from the internet IP address. That is done 
+			// by the API "https://ipinfo.io/json".
+			if (config.qth.length() < 4) {
+				if (QTH.load_api_location())
+				{
+					config.loc_lat_lon = QTH.getLoc();
+					config.qth = QTH.latLonToMaidenhead(config.loc_lat_lon);
+					LOG_I("Find QTH by IP address: %s, %s\n", config.loc_lat_lon.c_str(), config.qth.c_str());
+				}
+				//TODO: Check on error state qth,loc_lat_lon
+			} else {
+				config.loc_lat_lon = QTH.MaidenheadTolatLon(config.qth);
+				LOG_I("Set location by QTH: %s (QTH=%s)\n", config.loc_lat_lon.c_str(), config.qth.c_str());
+			}
+			state = sLoadSunRise;
+			break;
+
+
+		case sLoadSunRise:
+			setSlotTime();								// Get the current time and slot
+			if ( ! sunrise_loaded && QTH.load_api_sunrise(config.loc_lat_lon, hour_now == 23 ? "tomorrow" : "today" )) {
+				sunrise_loaded = true;
+			}
+			state = sMakeSlotPlan;
+			break;
+
+
+		case sMakeSlotPlan:
+			// if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
+			ssd1306_printf_P(TW, PSTR("Make\nSlot Plan"));
+			makeSlotPlan();								// Make a plan for the this TX hour
 			state = sSetOneSecondTick;
 			break;
 
+
 		case sSetOneSecondTick:
+		// Start the one second timer
 		{	struct timeval tv;
 			gettimeofday(&tv, NULL);					// Get the current time in sec and usec
 
@@ -309,19 +355,88 @@ void loop()
 			timer_us_one_second = micros();				// Initialize the timer only ones!
 			timer_us_one_second -= tv.tv_usec;			// Correct the us to the sec tick
 
-			state = sWifiDefaultLoop;
+			state = sDefaultLoop;
 		}	break;
 
-		case sWifiDefaultLoop:
-			if (!semaphore_wifi_connected) { state = sWifiDisconnect; timer_us_one_second = 0; break; }
 
-			// loop_1s_tick();
-			loop_20ms_tick();
+		case sDefaultLoop:
+			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
 
+			// Check the 1 second timer tick.
+			if ((micros() - timer_us_one_second) >= value_us_one_second)
+			{
+				timer_us_one_second += value_us_one_second;
+
+				setSlotTime();							// Get the current time and slot
+
+				if (slot_sec == 0) {					// First second of the 2 minute interval clock
+					state = sSlotSecond_0;
+				} else
+				if (slot_sec == wspr_free_second) {		// Actions needed in the free time after a wspr tx (> 111sec, 9sec time available!)
+					state = sSlotSecond_111;
+				} else
+				{
+					ssd1306_main_window();				// Show the (second) clock on display
+				}
+			}
 			break;
 
+
+		case sSlotSecond_0:
+		{
+			//++ At every 2 minute interval start a WSPR message, if slot is richt.
+			switch (wspr_slot_type[slot_now]) {
+			default:
+			case WSPR_TX_NONE:							// No WSPR TX now
+				break;
+			case WSPR_TX_TYPE_1:						// Type 1 message: CALL, LOC4, dBm
+				wspr_tx_init(config.call.c_str());
+				break;
+			case WSPR_TX_TYPE_2:						// Type 2 message: pre/CALL/suff, dBm
+				wspr_tx_init((config.prefix + config.call + config.suffix).c_str());
+				break;
+			case WSPR_TX_TYPE_3:						// Type 3 message: *hash* <pre/CALL/suff>, LOC6, dBm
+				wspr_tx_init(('<' + config.prefix + config.call + config.suffix + '>').c_str());
+				break;
+			}
+
+			ssd1306_main_window();						// Show the (second) clock on display
+			state = sDefaultLoop;
+		}	break;
+
+
+		case sSlotSecond_111:							// wspr_free_second	= 8192.0 / 12000.0 * WSPR_SYMBOL_COUNT + 1.0
+		{
+			state = sDefaultLoop;
+
+			if (slot_now == 29)							// Last slot in the hour (0...29)
+			{
+				state = sLoadConfigJSon;				// Reload the config (.json) from the webserver every hour
+
+				if (hour_now == 23)						// Last slot of the day to do some houskeeping
+				{
+					sunrise_loaded = false;
+					state = sLoadSunRise;				// Reload the sunrise and sunset time from a webserver
+
+					LOG_I("Set the const ramdom seed number 0x%08x\n", config.randomSeed);
+					randomSeed(config.randomSeed);
+				}
+			}
+
+			// Only read the temp once every 2min
+			if (display_status == DISPLAY_ON) 
+				readTemperature();
+
+			ssd1306_main_window();						// Show the (second) clock on display
+		}	break;
+
 		case sWifiDisconnect:
-			ssd1306_printf_P(1000, PSTR("WiFi disconnect\nRestart WiFi"));
+			ssd1306_printf_P(2000, PSTR("WiFi disconnect\nRestart WiFi"));
+			timer_us_one_second = 0;				// Disable the one second timer
+
+			config.qth.clear();
+			config.loc_lat_lon.clear();
+
 			state = sIdle;
 			break;
 
@@ -330,8 +445,8 @@ void loop()
 	}
 
 	loop_wspr_tx();
-	loop_1s_tick();
-	// loop_ds18b20();								// Empty
+	loop_keys_tick();
+	// loop_ds18b20();								// Empty temp sensor loop, TODO fille from 1sec loop??
 	loop_display();
 	loop_wifi();
 }
@@ -348,95 +463,9 @@ void setSlotTime()
 	slot_sec	= s + (m % 2 ? 60 : 0);
 }
 
-// Secure one second function call
-void loop_1s_tick() 
-{
-	if ((timer_us_one_second == 0)
-	||	(micros() - timer_us_one_second) < value_us_one_second) return;
-	timer_us_one_second +=	value_us_one_second;
-
-	// /////////////////////// DEBUG
-	// struct timeval tv;
-	// gettimeofday(&tv, NULL);					// Get the current time in sec and usec
-	// LOG_I("timer_us_one_second=%ld, sec=%lld, us=%ld, TIME: %s", 
-	// 	timer_us_one_second, tv.tv_sec, tv.tv_usec, ctime(&tv.tv_sec));
-	// ///////////////////////
-
-	setSlotTime();						// Get the current time and slot
-
-	//++ At every 2 minute interval start a WSPR message, if slot is richt.
-	if (slot_sec == 0)								// First second of the 2 minute interval clock
-	{
-		String Call;
-
-		switch (wspr_slot_type[slot_now]) {
-		case WSPR_TX_NONE:							// No WSPR TX slot
-			LOG_I("No WSPR TX slot %d\n", slot_now);
-			break;
-		case WSPR_TX_TYPE_1:						// Type 1 message: CALL, LOC4, dBm
-			Call = config.call;
-			break;
-		case WSPR_TX_TYPE_2:						// Type 2 message: pre/CALL/suff, dBm
-			Call  = config.prefix;
-			Call += config.call;
-			Call += config.suffix;
-			break;
-		case WSPR_TX_TYPE_3:						// Type 3 message: *hash* <pre/CALL/suff>, LOC6, dBm
-			Call  = '<';
-			Call += config.prefix;
-			Call += config.call;
-			Call += config.suffix;
-			Call += '>';
-			break;
-		default:
-			break;
-		}
-
-		if (!Call.isEmpty()) 
-		{
-			wspr_tx_init(Call);
-
-			LOG_I("WSPR-Time: Hour:%2u Slot:%2u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%d)Hz\n", 
-				hour_now, slot_now, 
-				Call.c_str(), 
-				config.qth.c_str(),
-				wspr_slot_freq[slot_now][0],
-				wspr_slot_freq[slot_now][1],
-				wspr_slot_freq[slot_now][2],
-				wspr_slot_band[slot_now] );
-		}
-	}
-
-	// Actions needed in the free time after a wspr tx (> 111sec, 9sec time!)
-	if (slot_sec == wspr_free_second) 
-	{
-		if (slot_now == 29)		// Last slot of the hour
-		{
-			if (hour_now == 23)	// Last slot of the day
-			{
-				// Get the sunrise/sunset times for tomorrow ()
-				QTH.api_sunrise("tomorrow");	// Get the sunrise/sunset data from the web
-
-				LOG_I("Set the const ramdom seed number 0x%08x\n", config.randomSeed);
-				randomSeed(config.randomSeed);
-			}
-
-			// First load the Json config data from webserver
-			if (loadWebConfigData())
-				makeSlotPlan();			// Make a plan for the next TX hour
-		}
-
-		// Only read the temp once every 2min
-		if (display_status == DISPLAY_ON) 
-			readTemperature();
-	}
-
-	ssd1306_main_window();
-}
-
 
 // Used for slower processing, timing from the cpu xtal
-void loop_20ms_tick() 
+void loop_keys_tick() 
 {
 	static uint8_t switchStatusLast = HIGH;				// last status hardware switch
 
@@ -447,7 +476,6 @@ void loop_20ms_tick()
 		timer_ms_20ms_loop = millis();
 		return;
 	}
-
 	timer_ms_20ms_loop += value_ms_20ms_loop;
 
 	// Check if button is pressed to lightup the display

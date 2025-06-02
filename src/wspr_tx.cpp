@@ -86,22 +86,33 @@ void loop_wspr_tx()
 		wspr_tx_bit();											// Ok, transmit the net tone bit
 	}
 #endif
-
 }
 
-void wspr_tx_init(String& call)
+void wspr_tx_init(const char* call)
 {
+	timer_us_wspr_bit = micros();		// Start timer close to the 1sec tick
+
 	if (si5351_ready())
 	{
-		// LOG_D("WSPR TX with Call: %s, Loc:%s, Power:%ddBm\n", call.c_str(), config.qth.c_str(), config.power);
+		LOG_I("WSPR TX Init: Hour:%2u Slot:%2u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%d)Hz, Power=%ddBm\n", 
+			hour_now, slot_now, 
+			call,
+			config.qth.c_str(),
+			wspr_slot_freq[slot_now][0],
+			wspr_slot_freq[slot_now][1],
+			wspr_slot_freq[slot_now][2],
+			wspr_slot_band[slot_now],
+			config.power
+		);
 
-		wspr.wspr_encode(call.c_str(), config.qth.c_str(), config.power, wspr_symbols);
+		wspr.wspr_encode(call, config.qth.c_str(), config.power, wspr_symbols);
 
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
-		print_wspr_symbols(call.c_str(), config.qth.c_str(), config.power, wspr_symbols);
+		print_wspr_symbols(call, config.qth.c_str(), config.power, wspr_symbols);
 #endif
 
-		timer_us_wspr_bit = micros();
+		// timer_us_wspr_bit = micros();
+		// wspr_symbol_index = 0;
 		wspr_tx_bit();
 	}
 	else
@@ -127,15 +138,16 @@ void print_wspr_symbols(const char* call, const char* loc, uint8_t power, uint8_
 
 void wspr_tx_bit()
 {
-	if (wspr_symbol_index != WSPR_SYMBOL_COUNT)
+	// if (wspr_symbol_index != WSPR_SYMBOL_COUNT)
+	if (wspr_symbol_index < WSPR_SYMBOL_COUNT)
 	{
 		if (wspr_symbol_index == 0)   							// On first bit enable the tx output.
 		{
-// //// DEBUG ///////////////////////////////////////////////////////////////////////////////////////////////////
-// 			struct timeval tv;
-// 			gettimeofday(&tv, NULL);					// Get the current time in sec and usec
-// 			LOG_D("WSPR start time [%ld us] %s", tv.tv_usec, ctime(&tv.tv_sec));
-// //// DEBUG ///////////////////////////////////////////////////////////////////////////////////////////////////
+			// // DEBUG ///////////////////////////////////////////////////////////////////////////////////////////////////
+			// struct timeval tv;
+			// gettimeofday(&tv, NULL);					// Get the current time in sec and usec
+			// LOG_D("WSPR start time [%ld us] %s", tv.tv_usec, ctime(&tv.tv_sec));
+			// // DEBUG ///////////////////////////////////////////////////////////////////////////////////////////////////
 			wspr_tx_enable(SI5351_CLK0);
 			wspr_tx_enable(SI5351_CLK1);
 			wspr_tx_enable(SI5351_CLK2);
@@ -163,7 +175,7 @@ void wspr_tx_bit()
 void wspr_tx_freq(si5351_clock clk)
 {
 	if (wspr_slot_type[slot_now] != WSPR_TX_NONE && 
-		wspr_slot_freq[slot_now][clk] != 0)
+		wspr_slot_freq[slot_now][clk] != WSPR_TX_FREQ_NONE)
 	{
 		uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[slot_now][clk] + wspr_slot_band[slot_now]);
 
