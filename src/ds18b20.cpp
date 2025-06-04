@@ -21,11 +21,10 @@ float		temperature_now		= 0.0;
 //---------------------------------------------------------------------------------
 void setup_ds18b20()
 {
-	sensors.begin();					// Init the onewire for the DS18B20 temp sensor
-
-	sensors.setResolution(12);			// Set the resolution to 12 bit
-	// sensors.setWaitForConversion(true);	// No blocking wait for the conversion
-	// sensors.setWaitForConversion(true);	// Block until the sensor is read
+	sensors.begin();							// Init the onewire for the DS18B20 temp sensor
+	sensors.setResolution(12);					// Set the resolution to 12 bit
+	// sensors.setWaitForConversion(true);		// No blocking wait for the conversion
+	// sensors.setWaitForConversion(true);		// Block until the sensor is read
 	sensors.requestTemperatures();
 
 	LOG_I("DS18B20: %d device(s) found\n", sensors.getDeviceCount());

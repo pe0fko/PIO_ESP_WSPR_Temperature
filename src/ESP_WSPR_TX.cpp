@@ -228,7 +228,7 @@ void loop()
 	{
 		case sIdle:
 			init_wifi();								// Initialize the Wifi for the NTP,OTA service 
-			ssd1306_printf_P(TW, PSTR("WiFi\nStarting"));
+			ssd1306_printf_P(TW, PSTR("WiFi\nStarting\nWait"));
 			timer_no_network = millis();
 			state = sWaitWifiConnect;
 			break;
@@ -246,7 +246,10 @@ void loop()
 			}
 
 			if (semaphore_wifi_connected) {
-				ssd1306_printf_P(TW, PSTR("WiFi\nConnected"));
+				ssd1306_printf_P(TW, PSTR("WiFi\nConnected\n%s"), WiFi.SSID().c_str());
+				LOG_I("WiFi Connected SSID %s, RSSI %d)\n"
+					, WiFi.SSID().c_str()
+					, WiFi.RSSI());
 				state = sWifiConnect;
 			}
 
@@ -258,20 +261,29 @@ void loop()
 
 
 		case sWifiConnect:
+			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
+
 			if (semaphore_wifi_ip_address) {
-				// ssd1306_wifi_page();
+				LOG_I("DHCP IP:%s/%s, GW:%s)\n"
+					, WiFi.localIP().toString().c_str()
+					, WiFi.subnetMask().toString().c_str()
+					, WiFi.gatewayIP().toString().c_str() );
+
 				ssd1306_printf_P(1000, PSTR("IP:%s\nGW:%s\nRSSI:%d"),
 					WiFi.localIP().toString().c_str(),
 					WiFi.gatewayIP().toString().c_str(),
 					WiFi.RSSI() );
+
 				state = sWifiIpAddress;
 			}
 			break;
 
 
 		case sWifiIpAddress:
+			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
+
 			if (semaphore_wifi_ntp_received) {
-				ssd1306_printf_P(TW, PSTR("WiFi\nNTP Time"));		//TODO:
+				ssd1306_printf_P(TW, PSTR("WiFi\nNTP Time\nReceived"));
 				state = sLoadConfigJSon;
 			}
 			break;
@@ -436,6 +448,8 @@ void loop()
 
 			config.qth.clear();
 			config.loc_lat_lon.clear();
+			
+			WiFi.disconnect(true);				// Disconnect from WiFi and reset the WiFi module
 
 			state = sIdle;
 			break;
@@ -446,7 +460,7 @@ void loop()
 
 	loop_wspr_tx();
 	loop_keys_tick();
-	// loop_ds18b20();								// Empty temp sensor loop, TODO fille from 1sec loop??
+	loop_ds18b20();
 	loop_display();
 	loop_wifi();
 }
@@ -512,6 +526,94 @@ void loop_keys_tick()
 	}
 #endif
 }
+
+/*
+{
+  "chipid": 6479671,
+  "call": "PE0FKO",
+  "prefix": "F",
+  "suffix": "",
+  "locator": "JN13IW",
+  "power": "10",
+  "wspr_tx_enable": true,
+  "hostname": "wsprtst",
+  "displayoff": 240,
+  "freq_correction": -195,
+  "timezones": [
+    {
+      "start": "0:0",
+      "sunrise": "-1:0",
+      "clk": 0,
+      "list": "clk0N",
+      "name": "Nigth light zone"
+    },
+    {
+      "sunrise": "-1:00",
+      "sunset": "+2:00",
+      "clk": 0,
+      "list": "clk0D",
+      "name": "Day light zone"
+    },
+    {
+      "sunset": "2:0",
+      "end": "24:00",
+      "clk": 0,
+      "list": "clk0N",
+      "name": "Day light zone"
+    },
+    {
+      "start": "00:00",
+      "end": "24:00",
+      "clk": 1,
+      "list": "clk1",
+      "name": "Freq list for clk1"
+    },
+    {
+      "start": "00:00",
+      "end": "24:00",
+      "clk": 2,
+      "list": "clk2",
+      "name": "Freq list for clk2"
+    }
+  ],
+  "clk0D": [
+    7,
+    28,
+    14
+  ],
+  "clk0N": [
+    7,
+    3,
+    14
+  ],
+  "clk1": [
+    0
+  ],
+  "clk2": [
+    0
+  ],
+  "wsprtype": [2, 2, 2, 2, 2, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+  "temp_correction": -2,
+  "temperature": {
+    "band": 5,
+    "clk": 0,
+    "enable": true,
+    "timezones": [
+      {
+        "start": "00:00",
+        "end": "12:00",
+        "clk": 0,
+        "band": 5
+      },
+      {
+        "start": "12:00",
+        "end": "24:00",
+        "clk": 0,
+        "band": 10
+      }
+    ]
+  }
+}*/
 
 /*
 https://pe0fko.nl/wspr/id/client_6479671_NL.json

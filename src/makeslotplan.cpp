@@ -94,7 +94,7 @@ void makeSlotPlanZone()
 
 			int clk = tz["clk"] | SI5351_CLK0;
 
-#ifndef NDEBUG
+#ifdef DEBUG
 			if (display_status == DISPLAY_ON) 
 			{
 				LOG_I("Freq-List: %s on clk:%d, start=%02d:%02d, end=%02d:%02d, ", 

@@ -205,14 +205,13 @@ void ssd1306_background()
 
 // void ssd1306_wifi_page()
 // {
-// 	// LOG_I("Connected to %s (IP:%s/%s, GW:%s, RSSI %d)\n"
-// 	// 	, WiFi.SSID().c_str()
-// 	// 	, WiFi.localIP().toString().c_str()							// Send the IP address of the ESP8266 to the computer
-// 	// 	, WiFi.subnetMask().toString().c_str()
-// 	// 	, WiFi.gatewayIP().toString().c_str()
-// 	// 	, WiFi.RSSI());
-
-// 	ssd1306_printf_P(4000, PSTR("IP:%s\nGW:%s\nRSSI:%d"),
+// 	LOG_I("Connected to %s (IP:%s/%s, GW:%s, RSSI %d)\n"
+// 		, WiFi.SSID().c_str()
+// 		, WiFi.localIP().toString().c_str()							// Send the IP address of the ESP8266 to the computer
+// 		, WiFi.subnetMask().toString().c_str()
+// 		, WiFi.gatewayIP().toString().c_str()
+// 		, WiFi.RSSI());
+// 	ssd1306_printf_P(1000, PSTR("IP:%s\nGW:%s\nRSSI:%d"),
 // 		WiFi.localIP().toString().c_str(),
 // 		WiFi.gatewayIP().toString().c_str(),
 // 		WiFi.RSSI() );
@@ -250,7 +249,10 @@ void ssd1306_printf_P(int wait, PGM_P format, ...)
 		ssd1306_center_string(ssid.c_str(), 16+12+12+12);
 	}
 
+#ifdef DEBUG
+	// The display will interupt the WSPR TX
 	ssd1306_display_on();
+#endif
 	display.display();
 
 // #ifdef DEBUG_ESP_PORT

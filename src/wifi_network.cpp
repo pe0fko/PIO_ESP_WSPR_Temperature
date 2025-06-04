@@ -1,8 +1,8 @@
 #include "header.h"
 
-volatile	bool	semaphore_wifi_connected		= false;
-volatile	bool	semaphore_wifi_ip_address		= false;
-volatile	bool	semaphore_wifi_ntp_received		= false;
+volatile	bool	semaphore_wifi_connected		= false;	// WiFi connected semaphore
+volatile	bool	semaphore_wifi_ip_address		= false;	// WiFi IP address semaphore
+volatile	bool	semaphore_wifi_ntp_received		= false;	// WiFi NTP time received semaphore
 
 static		WiFiEventHandler	mConnectHandler;				// WiFi event handler for the Connect
 static		WiFiEventHandler	mDisConnectHandler;				// WiFi event handler for the Disconnect
