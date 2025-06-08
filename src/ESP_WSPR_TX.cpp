@@ -218,17 +218,21 @@ bool jsonSetConfig(String jsonString)
 
 void loop()
 {
-	enum	state_t {	sIdle, sWaitWifiConnect, sWifiConnect, sWifiIpAddress,
+	enum	state_t {	sIdle, sWaitWifiConnect, sWifiConnect, sWaitOnTimeReceived,
 						sLoadSunRise, sLoadLocation, sLoadConfigJSon, sWaitConfigReload, 
 						sLoadIpLocation, sMakeSlotPlan, sSetOneSecondTick, sDefaultLoop, 
 						sSlotSecond_0, sSlotSecond_111, sWifiDisconnect };
 	static	state_t	state = sIdle;
 
-	switch (state) 
+	if (state >= sWifiConnect && !semaphore_wifi_connected) { 
+		state = sWifiDisconnect;
+	}
+
+ 	switch (state) 
 	{
 		case sIdle:
 			init_wifi();								// Initialize the Wifi for the NTP,OTA service 
-			ssd1306_printf_P(TW, PSTR("WiFi\nStarting\nWait"));
+			ssd1306_printf_P(TW, PSTR("WiFi\n\nStarting"));
 			timer_no_network = millis();
 			state = sWaitWifiConnect;
 			break;
@@ -261,10 +265,8 @@ void loop()
 
 
 		case sWifiConnect:
-			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
-
 			if (semaphore_wifi_ip_address) {
-				LOG_I("DHCP IP:%s/%s, GW:%s)\n"
+				LOG_I("DHCP IP:%s/%s, GW:%s\n"
 					, WiFi.localIP().toString().c_str()
 					, WiFi.subnetMask().toString().c_str()
 					, WiFi.gatewayIP().toString().c_str() );
@@ -274,16 +276,14 @@ void loop()
 					WiFi.gatewayIP().toString().c_str(),
 					WiFi.RSSI() );
 
-				state = sWifiIpAddress;
+				state = sWaitOnTimeReceived;
 			}
 			break;
 
 
-		case sWifiIpAddress:
-			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
-
+		case sWaitOnTimeReceived:
 			if (semaphore_wifi_ntp_received) {
-				ssd1306_printf_P(TW, PSTR("WiFi\nNTP Time\nReceived"));
+				ssd1306_printf_P(TW, PSTR("WiFi\nsNTP Time\nReceived"));
 				state = sLoadConfigJSon;
 			}
 			break;
@@ -291,8 +291,6 @@ void loop()
 
 		case sLoadConfigJSon:
 		{	String page;
-			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
-
 			setSlotTime();						// Get the current time and slot
 			ssd1306_printf_P(TW, PSTR("Web API\nLoad\nID:%d"), ESP.getChipId() );
 
@@ -334,7 +332,7 @@ void loop()
 				//TODO: Check on error state qth,loc_lat_lon
 			} else {
 				config.loc_lat_lon = QTH.MaidenheadTolatLon(config.qth);
-				LOG_I("Set location by QTH: %s (QTH=%s)\n", config.loc_lat_lon.c_str(), config.qth.c_str());
+				LOG_I("Set location by QTH:%s to location:%s\n", config.qth.c_str(), config.loc_lat_lon.c_str());
 			}
 			state = sLoadSunRise;
 			break;
@@ -342,7 +340,9 @@ void loop()
 
 		case sLoadSunRise:
 			setSlotTime();								// Get the current time and slot
-			if ( ! sunrise_loaded && QTH.load_api_sunrise(config.loc_lat_lon, hour_now == 23 ? "tomorrow" : "today" )) {
+			if (! sunrise_loaded 
+			&&	QTH.load_api_sunrise(config.loc_lat_lon, hour_now == 23 ? "tomorrow" : "today" )) 
+			{
 				sunrise_loaded = true;
 			}
 			state = sMakeSlotPlan;
@@ -350,9 +350,10 @@ void loop()
 
 
 		case sMakeSlotPlan:
-			// if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
+			setSlotTime();								// Get the current time and slot
 			ssd1306_printf_P(TW, PSTR("Make\nSlot Plan"));
 			makeSlotPlan();								// Make a plan for the this TX hour
+
 			state = sSetOneSecondTick;
 			break;
 
@@ -372,8 +373,6 @@ void loop()
 
 
 		case sDefaultLoop:
-			if (!semaphore_wifi_connected) { state = sWifiDisconnect; break; }
-
 			// Check the 1 second timer tick.
 			if ((micros() - timer_us_one_second) >= value_us_one_second)
 			{
@@ -444,12 +443,11 @@ void loop()
 
 		case sWifiDisconnect:
 			ssd1306_printf_P(2000, PSTR("WiFi disconnect\nRestart WiFi"));
-			timer_us_one_second = 0;				// Disable the one second timer
 
 			config.qth.clear();
 			config.loc_lat_lon.clear();
-			
-			WiFi.disconnect(true);				// Disconnect from WiFi and reset the WiFi module
+
+			WiFi.disconnect(true);						// Disconnect from WiFi and reset the WiFi module
 
 			state = sIdle;
 			break;

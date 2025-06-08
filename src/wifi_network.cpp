@@ -7,10 +7,14 @@ volatile	bool	semaphore_wifi_ntp_received		= false;	// WiFi NTP time received se
 static		WiFiEventHandler	mConnectHandler;				// WiFi event handler for the Connect
 static		WiFiEventHandler	mDisConnectHandler;				// WiFi event handler for the Disconnect
 static		WiFiEventHandler	mGotIpHandler;					// WiFi event handler for the GotIP
+static		WiFiEventHandler	mDhcpTimeout;					// WiFi event handler for the DHCP timeout
+// static		WiFiEventHandler	mAuthModeChangedHandler;			// WiFi event handler for the AuthModeChanged
 
 static		void	onWifiConnect(const WiFiEventStationModeConnected& ssid);
 static		void	onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo);
 static		void	onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo);
+static		void	onWifiDhcpTimeout();
+
 static		void	cb_ntp_time_is_set(bool from_sntp);
 
 //---------------------------------------------------------------------------------
@@ -24,21 +28,25 @@ void init_wifi()
 	semaphore_wifi_ip_address = false;
 	semaphore_wifi_ntp_received = false;
 
-	// WiFi.disconnect(false, true);								// Cleanup old wifi credentials in eeprom
+	// Register WiFi event handlers
+	mConnectHandler		= WiFi.onStationModeConnected(onWifiConnect);
+	mDisConnectHandler	= WiFi.onStationModeDisconnected(onWifiDisconnect);
+	mGotIpHandler		= WiFi.onStationModeGotIP(onWiFiGotIP);
+	mDhcpTimeout		= WiFi.onStationModeDHCPTimeout(onWifiDhcpTimeout);
+
+	// WiFi.disconnect(false, true);							// Cleanup old wifi credentials in eeprom
 	WiFi.persistent(false);
 	WiFi.mode(WIFI_STA);										// Set WiFi to station mode
 	WiFi.setHostname(config.hostname.c_str());					// Set Hostname.
 	WiFi.setAutoReconnect(true);								// Keep WiFi connected
 	// WiFi.waitForConnectResult();
 
-	// Register WiFi event handlers
-	mConnectHandler		= WiFi.onStationModeConnected(onWifiConnect);
-	mDisConnectHandler	= WiFi.onStationModeDisconnected(onWifiDisconnect);
-	mGotIpHandler		= WiFi.onStationModeGotIP(onWiFiGotIP);
-
 	addAllAPs();												// Add all APs to the list
 }
 
+//---------------------------------------------------------------------------------
+//---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....
+//---------------------------------------------------------------------------------
 void setup_wifi()
 {
 #ifdef FEATURE_OTA
@@ -65,6 +73,9 @@ void setup_wifi()
 #endif
 }
 
+//---------------------------------------------------------------------------------
+//---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
+//---------------------------------------------------------------------------------
 void loop_wifi()
 {
 	wifiMulti.run((120 - 1 - wspr_free_second) * 1000UL);
@@ -94,11 +105,6 @@ void onWiFiGotIP(const WiFiEventStationModeGotIP& ipInfo)
 	// 	ipInfo.gw.toString().c_str()
 	// );
 
-	// // TESTING
-	// ip_addr_t hostIP;
-	// dns_gethostbyname("time.google.com", &hostIP, NULL, 0);	// Get the DNS IP address
-	// // TESTING
-
 	settimeofday_cb(cb_ntp_time_is_set);				// Call-back NTP function
 	configTime(MYTZ, "time.google.com", "nl.pool.ntp.org");
 
@@ -112,23 +118,7 @@ void cb_ntp_time_is_set(bool from_sntp)
 	// represented as the number of microseconds. It is always less than one million."
 	struct timeval tv;
 	gettimeofday(&tv, NULL);					// Get the current time in sec and usec
-
-	// LOG_I("NTP Sync update timer_us_one_second = %ld\n", timer_us_one_second);
-	// if (timer_us_one_second != 0) {
-	// 	uint32_t old = timer_us_one_second;
-
-	// 	timer_us_one_second = micros();				// Initialize the timer only ones!
-	// 	timer_us_one_second -= tv.tv_usec;			// Correct the us to the sec tick
-
-	// 	old -= timer_us_one_second;
-	// 	LOG_I("\tDiff = %ld\n", old);
-	// }
-
-	// LOG_I("NTP update at [%lldsec] [%ldus] %s", tv.tv_sec, tv.tv_usec, ctime(&tv.tv_sec));
 	LOG_I("NTP update [%ld us] %s", tv.tv_usec, ctime(&tv.tv_sec));
-
-	// LOG_I("timer_us_one_second=%ld, sec=%lld, us=%ld, TIME: %s", 
-	// 	timer_us_one_second, tv.tv_sec, tv.tv_usec, ctime(&tv.tv_sec));
 
 	semaphore_wifi_ntp_received = true;
 }
@@ -147,7 +137,30 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& disconnectInfo)
 	semaphore_wifi_ntp_received = false;
 }
 
+void onWifiDhcpTimeout()
+{
+	WiFi.disconnect();			// WiFi disconnect, but not WiFi off
+
+	semaphore_wifi_connected = false;
+	semaphore_wifi_ip_address = false;
+	semaphore_wifi_ntp_received = false;
+}
+
+
 uint32_t sntp_update_delay_MS_rfc_not_less_than_15000 ()
 {
 	return sntp_update_delay;
 }
+
+// WIFI_EVENT_STAMODE_CONNECTED = 0,
+// WIFI_EVENT_STAMODE_DISCONNECTED,
+// WIFI_EVENT_STAMODE_AUTHMODE_CHANGE,
+// WIFI_EVENT_STAMODE_GOT_IP,
+// WIFI_EVENT_STAMODE_DHCP_TIMEOUT,
+// WIFI_EVENT_SOFTAPMODE_STACONNECTED,
+// WIFI_EVENT_SOFTAPMODE_STADISCONNECTED,
+// WIFI_EVENT_SOFTAPMODE_PROBEREQRECVED,
+// WIFI_EVENT_MODE_CHANGE,
+// WIFI_EVENT_SOFTAPMODE_DISTRIBUTE_STA_IP,
+// WIFI_EVENT_MAX,
+// WIFI_EVENT_ANY = WIFI_EVENT_MAX,

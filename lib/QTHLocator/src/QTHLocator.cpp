@@ -244,7 +244,7 @@ String QTHLocator::MaidenheadTolatLon(String qth)
 		lat += 0.5 / 240.0;
 	}
 
-	LOG_I("MaidenheadTolatLon: qth=%s, lat=%f, lon=%f\n", qth.c_str(), lat, lon);
+	// LOG_I("MaidenheadTolatLon: qth=%s, lat=%f, lon=%f\n", qth.c_str(), lat, lon);
 
 	//TODO: Terug naar apparte var voor lat,lon
 	return String(lat,4) + ',' + String(lon,4);

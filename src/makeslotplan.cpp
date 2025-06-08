@@ -23,27 +23,26 @@ void makeSlotPlan()
 {
 	makeSlotPlanEmpty();					// Clear/Empty the slot plan, no TX done yet.
 
-	LOG_I("TX %s by config.\n", config.wspr_enabled ? "enabled" : "disabled");
+	LOG_I("WSPR TX %s by config.\n", config.wspr_enabled ? "enabled" : "disabled");
 
 	if (config.wspr_enabled) 
 		makeSlotPlanZone();					// Make a plan for the zones
 
-	LOG_I("Temperature WSPR TX %s by config.\n", config.temp_enabled ? "enabled" : "disabled");
+	LOG_I("Temperature TX %s by config.\n", config.temp_enabled ? "enabled" : "disabled");
 
 	if (config.temp_enabled)
 		makeSlotPlanTemp();					// Make a plan for the temperature TX
 
 #ifdef FEATURE_PRINT_TIMESLOT
-	LOG_I("Time Slot:");
 	for(uint8_t i=0; i < WSPR_SLOTS_HOUR; ++i) 
 	{
-		if ((i % 3) == 0) LOG_I("\n");
-		LOG_I("\t%02d:T%1d[%d,%d,%d]+%03d", i, 
-				wspr_slot_type[i], 	wspr_slot_freq[i][0],	wspr_slot_freq[i][1],
-				wspr_slot_freq[i][2], wspr_slot_band[i]
-		);
+		if ((i % 3) == 0) LOG_I("TimeSlot:");
+		LOG_I("\t%02d:T%1d[%d,%d,%d]+%03d%s", i, 
+			wspr_slot_type[i], 	
+			wspr_slot_freq[i][0],	wspr_slot_freq[i][1], wspr_slot_freq[i][2], 
+			wspr_slot_band[i],
+			(i % 3) == 2 ? "\n" : "" );
 	}
-	LOG_I("\n");
 #endif
 }
 
@@ -202,13 +201,17 @@ makeSlotPlanTemp()
 
 		LOG_I("TX Slots: temperature %2.1f code [%d, %d, %d]\n", temperature_now, s1, s2, s3);
 
-		wspr_slot_type[s1] = WSPR_TX_TYPE_2;
-		wspr_slot_type[s2] = WSPR_TX_TYPE_2;
-		wspr_slot_type[s3] = WSPR_TX_TYPE_2;
-
 		int clk  = jsonDoc["temperature"]["clk"] | SI5351_CLK0;
 		if (clk >= SI5351_CLK0 && clk <= SI5351_CLK2) 
 		{
+			wspr_slot_type[s1] = WSPR_TX_TYPE_2;
+			wspr_slot_type[s2] = WSPR_TX_TYPE_2;
+			wspr_slot_type[s3] = WSPR_TX_TYPE_2;
+
+			wspr_slot_band[s1] = 50;
+			wspr_slot_band[s2] = 100;
+			wspr_slot_band[s3] = 150;
+
 			wspr_slot_freq[s1][clk] = getWsprBandFreq(band);
 			wspr_slot_freq[s2][clk] = getWsprBandFreq(band);
 			wspr_slot_freq[s3][clk] = getWsprBandFreq(band);
