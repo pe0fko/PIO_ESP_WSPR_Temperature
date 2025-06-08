@@ -139,7 +139,7 @@ bool jsonSetConfig(String jsonString)
 	DeserializationError error =  deserializeJson(jsonDoc, jsonString);
 	if (error != DeserializationError::Ok) {
 		LOG_E("Error Json Seserialize: %s\n", error.f_str());
-		// displayMessage(1000, "E: JSON");
+		ssd1306_printf_P(5*60*1000, PSTR("JSON\nFormat\nERROR"));	// 5min wait
 		return false;
 	}
 
@@ -158,29 +158,9 @@ bool jsonSetConfig(String jsonString)
 	config.temp_enabled		= jsonDoc["temp_tx_enabled"]	| true;
 	config.qth				= jsonDoc["locator"]			| "";
 
-
 	// Add the slash char if needed in prefix & suffix
 	if (config.prefix.length() != 0 && config.prefix.indexOf('/') == -1) config.prefix += '/';
 	if (config.suffix.length() != 0 && config.suffix.indexOf('/') == -1) config.suffix = "/" + config.suffix;
-
-	// LOG_I("*********  prefix/siffix: -%s- -%s-\n", config.prefix.c_str(), config.suffix.c_str());
-
-	// LOG_I("QTH locator from config file is %s\n", config.qth.c_str());
-
-	// if (jsonDoc["locator"].is<const char*>()) 
-	// {
-	// 	config.qth = jsonDoc["locator"]	| "JO32";
-	// 	LOG_I("QTH locator: by config file, %s\n", config.qth.c_str());
-	// }
-	// else
-	// {
-	// 	config.qth = QTH.latLonToMaidenhead(QTH.getLoc());
-	// 	ssd1306_printf_P(4000, PSTR("IP QTH\n%s\n%s"), config.qth.c_str(), QTH.getCity().c_str() );
-	// 	LOG_I("QTH locator: by IP address config, %s\n", config.qth.c_str());
-	// }
-
-	// config.loc_lat_lon = QTH.MaidenheadTolatLon(config.qth);
-	// LOG_I("QTH loc_lat_lon: %s\n", config.loc_lat_lon.c_str());
 
 	// Display the config data
 	//=========================================================
@@ -359,7 +339,8 @@ void loop()
 
 
 		case sSetOneSecondTick:
-		// Start the one second timer
+		// Start the one second timer on the exaxt second tick.
+		// This is done only once, so the timer is not reset in the loop.
 		{	struct timeval tv;
 			gettimeofday(&tv, NULL);					// Get the current time in sec and usec
 
