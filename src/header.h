@@ -143,11 +143,13 @@ void		setup_wspr_tx();
 void		loop_wspr_tx();
 void		setup_ds18b20();
 void		loop_ds18b20();
+void		setup_keys();
+void		loop_keys();
 
-void		ssd1306_main_window();
 void		ssd1306_center_string(const char* buffer, uint8_t Y, uint8_t size);
 void		ssd1306_background();
 void		ssd1306_printf_P(int wait, PGM_P format, ...);
+void		ssd1306_main_window();
 void		ssd1306_display_on();
 void		ssd1306_display_off();
 
@@ -159,7 +161,6 @@ void		SetupSi5351();
 bool		si5351_ready();
 void		loop_wspr_tx();
 void		loop_1s_tick();
-// void		loop_20ms_tick();
 void		wspr_tx_bit();
 void		wspr_tx_init(const char* call);
 void		wspr_tx_disable(si5351_clock clk);
@@ -168,7 +169,6 @@ void		wspr_tx_enable(si5351_clock clk);
 void		ssd1306_center_string(const char* buffer, uint8_t y, uint8_t size=1);
 void		ssd1306_background();
 void		makeSlotPlan();
-// bool		jsonSetConfig(String json);
 void		setSlotTime();
 bool		loadWebConfigData();
 

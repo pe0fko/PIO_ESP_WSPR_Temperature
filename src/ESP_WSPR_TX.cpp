@@ -73,19 +73,16 @@ config_t config	=
 			QTHLocator			QTH;										// Get the QTH locator from the internet
 			JsonDocument		jsonDoc;									// Allocate the JSON document
 
-static		uint32_t			timer_ms_20ms_loop			= 0;
 			uint32_t			timer_us_one_second			= 0;			// micros()
 static		uint32_t			timer_no_network			= 0;
 static		uint32_t			timer_retry_config_load		= 0;
+
+static		bool				sunrise_loaded				= false;		// Sunrise/Sunset loaded from the internet
 
 uint8_t		hour_now;														// Time now in hour (0..23)
 uint8_t		slot_now;														// Time now in slot (0..29)
 uint8_t		slot_sec;														// Second in the slot (0..119)
 
-static	bool	sunrise_loaded		= false;
-
-// Forward definition
-static	void	loop_keys_tick();
 
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....
@@ -220,10 +217,11 @@ void loop()
 
 		case sWaitWifiConnect:
 		{
-			uint32_t delay = millis() - timer_no_network;
+			// uint32_t delay = millis() - timer_no_network;
 
 			// Still no network, then reboot after some time
-			if (delay >= value_no_network) {
+			// if (delay >= value_no_network) {
+			if ((millis() - timer_no_network) >= value_no_network) {
 				LOG_F("REBOOT: No NTP time received.\n");
 				ssd1306_printf_P(10 * 1000, PSTR("**REBOOT**\nNo NTP sync"));
 				ESP.restart();
@@ -438,10 +436,10 @@ void loop()
 	}
 
 	loop_wspr_tx();
-	loop_keys_tick();
-	loop_ds18b20();
-	loop_display();
 	loop_wifi();
+	loop_display();
+	loop_keys();
+	loop_ds18b20();
 }
 
 void setSlotTime()
@@ -454,56 +452,6 @@ void setSlotTime()
 	hour_now	= timeinfo->tm_hour;
 	slot_now	= m / 2;
 	slot_sec	= s + (m % 2 ? 60 : 0);
-}
-
-
-// Used for slower processing, timing from the cpu xtal
-void loop_keys_tick() 
-{
-	static uint8_t switchStatusLast = HIGH;				// last status hardware switch
-
-	if ((millis() - timer_ms_20ms_loop) < value_ms_20ms_loop)	// Every 20ms...
-		return;
-
-	if (timer_ms_20ms_loop == 0) {
-		timer_ms_20ms_loop = millis();
-		return;
-	}
-	timer_ms_20ms_loop += value_ms_20ms_loop;
-
-	// Check if button is pressed to lightup the display
-	int switchStatus = digitalRead(BUTTON_INPUT);			// read status of switch
-	if (switchStatus != switchStatusLast)					// if status of button has changed
-	{
-		  switchStatusLast = switchStatus;
-		  if (switchStatus == LOW)
-		  {
-			display_status = display_status == DISPLAY_ON ? DISPLAY_OFF : DISPLAY_ON;
-
-			if (display_status == DISPLAY_ON)
-			{
-				ssd1306_display_on();				  		// Start the display ON timer
-				digitalWrite(LED_BUILTIN, HIGH);			// Switch the ESP LED off
-				readTemperature();							// Get temperature
-				ssd1306_main_window();						// Write to display
-			}
-			else
-				ssd1306_display_off();
-
-			LOG_I("Button pressed, display_status=%d\n", display_status);
-		  }
-	}
-#if 0
-	// Blink the ESP LED every 4s if display is off
-	if (display_status == DISPLAY_OFF)
-	{
-		static uint8_t led_pwm;
-		led_pwm %= 200;
-		digitalWrite(LED_BUILTIN, led_pwm++ == 0 ? LOW : HIGH);
-		delay(3);
-		digitalWrite(LED_BUILTIN, HIGH);
-	}
-#endif
 }
 
 /*

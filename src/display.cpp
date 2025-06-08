@@ -19,7 +19,6 @@ void setup_display()
 {
 	pinMode(LED_BUILTIN, OUTPUT);				// LED on the ESP
 	digitalWrite(LED_BUILTIN, HIGH);			// High is off!
-	pinMode(BUTTON_INPUT, INPUT_PULLUP);		// Button for display on/off
 
 	// Start the display driver
 	// Wire.begin(D2, D1);						// I2C SDA, SCL
