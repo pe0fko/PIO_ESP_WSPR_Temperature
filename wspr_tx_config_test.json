@@ -1,0 +1,111 @@
+{
+  "chipid": 6479671,
+  "call": "PE0FKO",
+  "prefix": "",
+  "suffix": "",
+  "locator": "JO32CD",
+  "power": "10",
+  "wspr_tx_enable": true,
+  "hostname": "wsprnl",
+  "displayoff": 240,
+  "freq_correction": -195,
+  "timezones": [
+    {
+      "start": "0:0",
+      "sunrise": "-1:0",
+      "clk": 0,
+      "list": "clk0N",
+      "name": "Nigth light zone"
+    },
+    {
+      "sunrise": "-1:00",
+      "sunset": "+2:00",
+      "clk": 0,
+      "list": "clk0D",
+      "name": "Day light zone"
+    },
+    {
+      "sunset": "+2:0",
+      "end": "24:00",
+      "clk": 0,
+      "list": "clk0N",
+      "name": "Day light zone"
+    },
+    {
+      "start": "00:00",
+      "end": "24:00",
+      "clk": 1,
+      "list": "clk1",
+      "name": "Freq list for clk1"
+    },
+    {
+      "start": "00:00",
+      "end": "24:00",
+      "clk": 2,
+      "list": "clk2",
+      "name": "Freq list for clk2"
+    }
+  ],
+  "clk0D": [
+    7,
+    28,
+    14
+  ],
+  "clk0N": [
+    7,
+    3,
+    14
+  ],
+  "clk1": [
+    0
+  ],
+  "clk2": [
+    0
+  ],
+  "wsprtype": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    3,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+  ],
+  "temp_correction": -2,
+  "temperature": {
+    "band": 5,
+    "clk": 0,
+    "enable": true,
+    "timezones": [
+      {
+        "start": "00:00",
+        "end": "24:00",
+        "clk": 0,
+        "band": 5
+      }
+    ]
+  }
+}

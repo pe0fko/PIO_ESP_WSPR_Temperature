@@ -9,7 +9,7 @@ static		uint32_t			timer_ms_20ms_loop			= 0;
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....
 //---------------------------------------------------------------------------------
-void setup_keys()
+void setup_button()
 {
 	pinMode(BUTTON_INPUT, INPUT_PULLUP);				// Button for display on/off
 	timer_ms_20ms_loop = millis();						// Set the timer for the next 20ms
@@ -18,7 +18,7 @@ void setup_keys()
 //---------------------------------------------------------------------------------
 //---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
 //---------------------------------------------------------------------------------
-void loop_keys() 
+void loop_button() 
 {
 	static uint8_t switchStatusLast = HIGH;				// last status hardware switch
 

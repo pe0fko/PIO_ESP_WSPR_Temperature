@@ -36,22 +36,35 @@ static	uint32_t	timer_us_wspr_bit		= 0;
 uint8_t				wspr_symbols[WSPR_SYMBOL_COUNT];
 uint32_t			wspr_symbol_index		= 0;
 uint8_t				wspr_slot_type[WSPR_SLOTS_HOUR];			// 0=None, 1="CALL", 2="P/CALL/S", 3="<P/CALL/S>"
-uint8_t				wspr_slot_band[WSPR_SLOTS_HOUR];			// Band freqency, 0 .. 200 Hz
+uint32_t			wspr_slot_band[WSPR_SLOTS_HOUR];			// Band freqency, SI5351_FREQ_MULT * (0 .. 200) Hz
 uint32_t			wspr_slot_freq[WSPR_SLOTS_HOUR][3];			// TX frequency for every CLK output (0..2)
 
-const	int32_t      	wspr_sym_freq[4] =
-{	static_cast<uint32_t> ( 0.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
-,	static_cast<uint32_t> ( 1.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
-,	static_cast<uint32_t> ( 2.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
-,	static_cast<uint32_t> ( 3.0 * 12000.0/8192.0 * (float)SI5351_FREQ_MULT + 0.5)
-};
-	
+static	int32_t		wspr_sym_freq[4] = {0};
+
+static	void		wspr_tx_freq(si5351_clock clk);
+static	void		wspr_tx_enable(si5351_clock clk);
+static	enum si5351_drive	get_drive_strength();
 
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....
 //---------------------------------------------------------------------------------
 void setup_wspr_tx()
 {
+	for(int i = 0; i < 4; ++i) 
+	{
+		float df = (float)i * 12000.0 / 8192.0;
+		df *= SI5351_FREQ_MULT;
+		df *= config.wspr_tone_mul;
+		df += 0.5;
+		// LOG_I("WSPR tone %d freq calc: %.2f Hz\n", i, df / SI5351_FREQ_MULT);
+		wspr_sym_freq[i] = (int32_t)df;
+	}
+	LOG_I("WSPR tone frequencies (Hz): %.2f, %.2f, %.2f, %.2f\n", 
+		(float)wspr_sym_freq[0] / SI5351_FREQ_MULT, 
+		(float)wspr_sym_freq[1] / SI5351_FREQ_MULT, 
+		(float)wspr_sym_freq[2] / SI5351_FREQ_MULT, 
+		(float)wspr_sym_freq[3] / SI5351_FREQ_MULT
+	);
 }
 
 //---------------------------------------------------------------------------------
@@ -83,7 +96,7 @@ void loop_wspr_tx()
 	&&  (micros() - timer_us_wspr_bit) >= value_us_wspr_bit)
 	{
 		timer_us_wspr_bit += value_us_wspr_bit;
-		wspr_tx_bit();											// Ok, transmit the net tone bit
+		wspr_tx_bit();											// Ok, transmit the next tone bit
 	}
 #endif
 }
@@ -94,21 +107,22 @@ void wspr_tx_init(const char* call)
 
 	if (si5351_ready())
 	{
-		LOG_I("WSPR TX Init: Hour:%2u Slot:%2u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%d)Hz, Power=%ddBm\n", 
+		LOG_I("WSPR TX Init: Hour:%2u Slot:%2u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%.2f)Hz, Power=%ddBm, Drive=%d\n", 
 			hour_now, slot_now, 
 			call,
-			config.qth.c_str(),
+			config.user_locator.c_str(),
 			wspr_slot_freq[slot_now][0],
 			wspr_slot_freq[slot_now][1],
 			wspr_slot_freq[slot_now][2],
-			wspr_slot_band[slot_now],
-			config.power
+			wspr_slot_band[slot_now] / (float)SI5351_FREQ_MULT,
+			config.user_power,
+			config.si5351_drive_strength
 		);
 
-		wspr.wspr_encode(call, config.qth.c_str(), config.power, wspr_symbols);
+		wspr.wspr_encode(call, config.user_locator.c_str(), config.user_power, wspr_symbols);
 
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
-		print_wspr_symbols(call, config.qth.c_str(), config.power, wspr_symbols);
+		print_wspr_symbols(call, config.user_locator.c_str(), config.user_power, wspr_symbols);
 #endif
 
 		// timer_us_wspr_bit = micros();
@@ -161,9 +175,7 @@ void wspr_tx_bit()
 	}
 	else
 	{
-		wspr_tx_disable(SI5351_CLK0);
-		wspr_tx_disable(SI5351_CLK1);
-		wspr_tx_disable(SI5351_CLK2);
+		wspr_tx_disable();
 
 		wspr_symbol_index = 0;
 		wspr_tx_counter += 1;
@@ -177,16 +189,24 @@ void wspr_tx_freq(si5351_clock clk)
 	if (wspr_slot_type[slot_now] != WSPR_TX_NONE && 
 		wspr_slot_freq[slot_now][clk] != WSPR_TX_FREQ_NONE)
 	{
-		uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[slot_now][clk] + wspr_slot_band[slot_now]);
+		// uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[slot_now][clk] + wspr_slot_band[slot_now]);
+		// if ( si5351_clockgen.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) ) {
+		// 	LOG_E("ERROR: wspr_tx_freq(%d) / SI5351::set_freq(...)\n", clk);
+		// }
 
-		if (si5351.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) ) {
+		// uint64_t wspr_frequency = SI5351_FREQ_MULT * (wspr_slot_freq[slot_now][clk] + wspr_slot_band[slot_now]);
+		uint64_t wspr_frequency
+			= wspr_slot_freq[slot_now][clk] * SI5351_FREQ_MULT
+			+ wspr_slot_band[slot_now];
+
+		if ( si5351_clockgen.set_freq( wspr_frequency + wspr_sym_freq[wspr_symbols[wspr_symbol_index]], clk ) ) {
 			LOG_E("ERROR: wspr_tx_freq(%d) / SI5351::set_freq(...)\n", clk);
 		}
 
 		// {	// TESTING
 		// 	// Lees PLL- en divider-instellingen
-		// 	uint64_t pll_freq = si5351.get_pll_frequency(SI5351_PLL_A);
-		// 	uint8_t divider = si5351.get_multisynth_divider(SI5351_CLK0);
+		// 	uint64_t pll_freq = si5351_clockgen.get_pll_frequency(SI5351_PLL_A);
+		// 	uint8_t divider = si5351_clockgen.get_multisynth_divider(SI5351_CLK0);
 
 		// 	Serial.print("PLL Freq: "); Serial.println(pll_freq);
 		// 	Serial.print("Divider: "); Serial.println(divider);
@@ -206,15 +226,36 @@ void wspr_tx_enable(si5351_clock clk)
 		// 		wspr_slot_freq[slot_now][clk] / 1000000.0, 
 		// 		wspr_slot_band[slot_now]);
 
-//		si5351.drive_strength(clk, SI5351_DRIVE_8MA); 			// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
-		si5351.set_clock_pwr(clk, 1);
-		si5351.output_enable(clk, 1);
-		si5351.drive_strength(clk, SI5351_DRIVE_8MA);
+		si5351_clockgen.set_clock_pwr(clk, 1);
+		si5351_clockgen.output_enable(clk, 1);
+		si5351_clockgen.drive_strength(clk, get_drive_strength());
 	}
  }
 
-void wspr_tx_disable(si5351_clock clk)
+// drive_strength: 
+// Possible values: 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
+enum si5351_drive 
+get_drive_strength()
 {
-	si5351.output_enable(clk, 0);
-	si5351.set_clock_pwr(clk, 0);
+	switch(config.si5351_drive_strength)
+	{
+		case 2:	return SI5351_DRIVE_2MA;
+		case 4:	return SI5351_DRIVE_4MA;
+		case 6:	return SI5351_DRIVE_6MA;
+		case 8:	return SI5351_DRIVE_8MA;
+		default: break;
+	}
+	return SI5351_DRIVE_8MA;
+}
+
+void wspr_tx_disable()
+{
+	si5351_clockgen.output_enable(SI5351_CLK0, 0);
+	si5351_clockgen.set_clock_pwr(SI5351_CLK0, 0);
+
+	si5351_clockgen.output_enable(SI5351_CLK1, 0);
+	si5351_clockgen.set_clock_pwr(SI5351_CLK1, 0);
+
+	si5351_clockgen.output_enable(SI5351_CLK2, 0);
+	si5351_clockgen.set_clock_pwr(SI5351_CLK2, 0);
 }

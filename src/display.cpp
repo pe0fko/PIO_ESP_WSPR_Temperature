@@ -1,7 +1,6 @@
 #include "header.h"
 #include <Adafruit_GFX.h>			// Adafruit GFX Library
 #include <Adafruit_SSD1306.h>		// Adafruit SSD1306 Wemos Mini OLED
-#include <DallasTemperature.h>		// Temperature sensor Dallas DS18B20
 
 Adafruit_SSD1306	display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -27,7 +26,7 @@ void setup_display()
 	display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
 	display.setRotation(0);						// Display normal wide screen
 
-	ssd1306_printf_P(4000, PSTR("PE0FKO WSPR TX\nID %d\n%s.local"), ESP.getChipId(), config.hostname.c_str());
+	ssd1306_printf_P(4000, PSTR("PE0FKO WSPR TX\nID %d\n%s.local"), ESP.getChipId(), config.system_hostname.c_str());
 }
 
 //---------------------------------------------------------------------------------
@@ -75,7 +74,7 @@ void ssd1306_main_window()
 	if (display_status == DISPLAY_OFF)
 		return;
 
-	if ((millis() - timer_ms_display_auto_off) >= 1000UL * config.displayOff)
+	if ((millis() - timer_ms_display_auto_off) >= 1000UL * config.system_display_off)
 	{
 		ssd1306_display_off();
 		return;
@@ -109,7 +108,7 @@ void ssd1306_main_window()
 	// }
 
 	// Display the WSPR Call, Locator and Power in dBm
-	sprintf(buffer, "%s/%s/%ddBm", config.call.c_str(), config.qth.c_str(), config.power);
+	sprintf(buffer, "%s/%s/%ddBm", config.user_call.c_str(), config.user_locator.c_str(), config.user_power);
 	ssd1306_center_string(buffer, SCREEN_HEIGHT-12);
 
 	if (wspr_symbol_index != 0)
@@ -248,10 +247,10 @@ void ssd1306_printf_P(int wait, PGM_P format, ...)
 		ssd1306_center_string(ssid.c_str(), 16+12+12+12);
 	}
 
-#ifdef DEBUG
+// #ifdef DEBUG
 	// The display will interupt the WSPR TX
 	ssd1306_display_on();
-#endif
+// #endif
 	display.display();
 
 // #ifdef DEBUG_ESP_PORT

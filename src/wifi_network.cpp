@@ -35,10 +35,11 @@ void init_wifi()
 	mDhcpTimeout		= WiFi.onStationModeDHCPTimeout(onWifiDhcpTimeout);
 
 	// WiFi.disconnect(false, true);							// Cleanup old wifi credentials in eeprom
-	WiFi.persistent(false);
+	WiFi.persistent(true);										// Keep the WiFi credentials in eeprom
 	WiFi.mode(WIFI_STA);										// Set WiFi to station mode
-	WiFi.setHostname(config.hostname.c_str());					// Set Hostname.
-	WiFi.setAutoReconnect(true);								// Keep WiFi connected
+	WiFi.setHostname(config.system_hostname.c_str());			// Set Hostname.
+
+	WiFi.setAutoReconnect(true);								// Keep WiFi connected, TODO via parameter?
 	// WiFi.waitForConnectResult();
 
 	addAllAPs();												// Add all APs to the list
@@ -50,19 +51,17 @@ void init_wifi()
 void setup_wifi()
 {
 #ifdef FEATURE_OTA
-	if ( ! config.hostname.isEmpty())
+	if ( ! config.system_hostname.isEmpty())
 	{
-		LOG_I("Setup OTA: %s\n", config.hostname.c_str());
-		ArduinoOTA.setHostname(config.hostname.c_str());
+		LOG_I("Setup OTA: %s\n", config.system_hostname.c_str());
+		ArduinoOTA.setHostname(config.system_hostname.c_str());
 #ifdef OTAPASSWD
 		ArduinoOTA.setPassword(OTAPASSWD);
 #endif
 		ArduinoOTA.setRebootOnSuccess(true);
 		ArduinoOTA.onStart([]() 
 			{	ssd1306_printf_P(1000, PSTR("OTA update\nRunning")); 
-				wspr_tx_disable(SI5351_CLK0);
-				wspr_tx_disable(SI5351_CLK1);
-				wspr_tx_disable(SI5351_CLK2);
+				wspr_tx_disable();		// Disable all WSPR transmitters
 			});
 		ArduinoOTA.onEnd([]()   
 			{	ssd1306_printf_P(1000, PSTR("OTA update\nReboot"));
@@ -78,17 +77,59 @@ void setup_wifi()
 //---------------------------------------------------------------------------------
 void loop_wifi()
 {
-	wifiMulti.run((120 - 1 - wspr_free_second) * 1000UL);
+	if (WiFi.getMode() != WIFI_OFF) 
+	{
+		wifiMulti.run((120 - 1 - wspr_free_second) * 1000UL);
 
 #ifdef FEATURE_OTA
-	ArduinoOTA.handle();
+	// Serial.printf("==========> OTA handle hostname='%s'\n", config.system_hostname.c_str()); Serial.flush();
+
+	// if ( ! config.system_hostname.isEmpty() )
+	// ArduinoOTA.handle();
 #endif
+	}
+
+	ArduinoOTA.handle();
 }
 
 void stop_wifi()
 {
+	LOG_I(">>>>>>>>>>> WiFi mode set to OFF mode\n");
+
+	ArduinoOTA.end();			// Stop the OTA service
+	MDNS.end();
+	sntp_stop();
+	delay(100);					// Wait for the WiFi to be disconnected
+	WiFi.softAPdisconnect(true); // Indien ooit AP actief
+	delay(100);					// Wait for the WiFi to be disconnected
+
+	mConnectHandler.reset();	// Reset the WiFi event handlers
+	mDisConnectHandler.reset();
+	mGotIpHandler.reset();
+	mDhcpTimeout.reset();		// mAuthModeChangedHandler.reset();
+
 	WiFi.disconnect(true);		// WiFi off set true
-	WiFi.mode(WIFI_OFF);		// Needed??
+	delay(100);					// Wait for the WiFi to be disconnected
+
+	WiFi.mode(WIFI_OFF);		// Set WiFi to OFF mode
+	delay(100);					// Wait for the WiFi to be disconnected
+
+	LOG_I("<<<<<<<<<<< WiFi mode set to OFF mode\n");
+
+	// mConnectHandler.reset();	// Reset the WiFi event handlers
+	// mDisConnectHandler.reset();
+	// mGotIpHandler.reset();
+	// mDhcpTimeout.reset();		// mAuthModeChangedHandler.reset();
+
+	// semaphore_wifi_connected = false;
+	// semaphore_wifi_ip_address = false;
+	// semaphore_wifi_ntp_received = false;
+	// // WiFi.setSleepMode(WIFI_NONE_SLEEP);	// Disable the WiFi sleep mode
+	// LOG_I("WiFi event handlers reset\n");
+	// // WiFi.setSleepMode(WIFI_MODEM_SLEEP);	// Enable the WiFi sleep mode
+	// LOG_I("WiFi set to sleep mode\n");
+	// // WiFi.setSleepMode(WIFI_LIGHT_SLEEP);	// Enable the WiFi light sleep mode
+	// LOG_I("WiFi set to light sleep mode\n");
 }
 
 void onWifiConnect(const WiFiEventStationModeConnected& ssid)

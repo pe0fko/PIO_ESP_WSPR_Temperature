@@ -53,19 +53,34 @@
 
 // Program config information
 struct	config_t
-{	String		call;
-	String		prefix;
-	String		suffix;
-	String		qth;
-	String		loc_lat_lon;
-	uint8_t		power;
-	uint32_t	freq_cal_factor;
-	uint32_t	randomSeed;
-	String		hostname;
-	int			displayOff;
-	float		temp_cor;
-	bool		wspr_enabled;	
-	bool		temp_enabled;
+{
+	String		user_call;
+	String		user_prefix;
+	String		user_suffix;
+	String		user_locator;
+	uint8_t		user_power;
+
+	String		system_version;
+	uint32_t	system_chipid;
+	String		system_hostname;
+	uint32_t	system_display_off;
+	uint32_t	system_randomSeed;
+
+	bool		si5351_enable;			// Si5351 enable
+	int			si5351_xtal_freq;		// Si5351 Xtal frequency 
+	int			si5351_calibration;		// Si5351 frequency calibration in ppm
+	int			si5351_drive_strength;	// Si5351 drive strength in mA
+
+	bool		wspr_enable;			// WSPR TX enable
+	float		wspr_band_freq;			// Current WSPR band frequency (0..200 Hz), 0 = random
+	float		wspr_tone_mul;			// WSPR TX tone spacing multiply factor (1.0 ... 4.0), DEBUG
+
+	bool		temp_enable;			// Temperature TX enable
+	int			temp_band;				// Temperature band frequency
+	float		temp_offset;			// Temperature offset correction
+	int			temp_clk;				// Temperature Si5351 CLK output
+
+	String		loc_lat_lon;			// Latitude and Longitude string
 };
 
 extern	config_t 	config;	// Config data from json file
@@ -86,14 +101,15 @@ extern	config_t 	config;	// Config data from json file
 
 
 //#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_17m + 100)
-//#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_40m + 100)
-#define		CARRIER_FREQUENCY		10000000UL
+#define   CARRIER_FREQUENCY		(WSPR_TX_FREQ_40m + 100)
+// #define	CARRIER_FREQUENCY		10000000UL
+// #define	CARRIER_FREQUENCY		5000000UL
 #define		CARRIER_SI5351_CLK		SI5351_CLK0
 
 // *********************************************
 
 extern		Adafruit_SSD1306	display;
-extern		Si5351				si5351;
+extern		Si5351				si5351_clockgen;
 
 const		uint32_t			value_ms_20ms_loop		= 20;				// 20ms interval check time ntp sec
 const		uint32_t			value_us_wspr_bit		= 8192.0 / 12000.0 * 1000000.0;	 // Delay value for WSPR
@@ -101,8 +117,10 @@ const		uint32_t			value_us_one_second		= 1000000UL;		// micro second (us)
 const		uint32_t			value_no_network		= 4 * 60 * 1000;	// 4 min (ntp must be init updated in this time)
 const		uint32_t			value_ms_led_blink_on	= 3141UL;			// 4sec interval blink led
 const		uint32_t			value_ms_led_blink_off	= 3UL;				// 3ms interval blink led
+const		uint32_t			value_ms_reboot			= 1000UL;			// 1sec interval reboot
 
 extern		uint32_t			timer_us_one_second;						// micros()
+// extern		uint32_t			timer_ms_reboot;
 
 extern		volatile bool		semaphore_wifi_connected;
 extern		volatile bool		semaphore_wifi_ip_address;
@@ -119,9 +137,10 @@ extern		uint32_t			wspr_symbol_index;
 
 extern		QTHLocator			QTH;										// Get the QTH locator from the internet
 extern		JsonDocument		jsonDoc;									// Allocate the JSON document
-extern		uint8_t				wspr_slot_type[WSPR_SLOTS_HOUR];				// 0=None, 1="CALL", 2="P/CALL/S", 3="<P/CALL/S>"
-extern		uint8_t				wspr_slot_band[WSPR_SLOTS_HOUR];				// Band freqency, 0 .. 200 Hz
+extern		uint8_t				wspr_slot_type[WSPR_SLOTS_HOUR];			// 0=None, 1="CALL", 2="P/CALL/S", 3="<P/CALL/S>"
 extern		uint32_t			wspr_slot_freq[WSPR_SLOTS_HOUR][3];			// TX frequency for every CLK output (0..2)
+extern		uint32_t			wspr_slot_band[WSPR_SLOTS_HOUR];			// Band freqency, 0 .. 200 Hz
+
 
 extern		uint8_t				hour_now;								// Time now in hour (0..23)
 extern		uint8_t				slot_now;								// Time now in slot (0..29)
@@ -143,8 +162,8 @@ void		setup_wspr_tx();
 void		loop_wspr_tx();
 void		setup_ds18b20();
 void		loop_ds18b20();
-void		setup_keys();
-void		loop_keys();
+void		setup_button();
+void		loop_button();
 
 void		ssd1306_center_string(const char* buffer, uint8_t Y, uint8_t size);
 void		ssd1306_background();
@@ -163,14 +182,13 @@ void		loop_wspr_tx();
 void		loop_1s_tick();
 void		wspr_tx_bit();
 void		wspr_tx_init(const char* call);
-void		wspr_tx_disable(si5351_clock clk);
-void		wspr_tx_freq(si5351_clock clk);
-void		wspr_tx_enable(si5351_clock clk);
+void		wspr_tx_disable();
 void		ssd1306_center_string(const char* buffer, uint8_t y, uint8_t size=1);
 void		ssd1306_background();
 void		makeSlotPlan();
 void		setSlotTime();
 bool		loadWebConfigData();
+void		stop_wifi();
 
 #ifdef DEBUG_ESP_PORT
 // Put the strings in PROGMEM, slow but free some (constant) ram memory.

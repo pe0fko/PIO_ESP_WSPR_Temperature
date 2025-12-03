@@ -10,25 +10,26 @@
 
 #include "header.h"
 
-Si5351		si5351;
+Si5351		si5351_clockgen;
 
 //---------------------------------------------------------------------------------
 //---- SETUP....  SETUP....  SETUP....  SETUP....  SETUP....
 //---------------------------------------------------------------------------------
 void setup_si5351()
 {
+
+	//TODO: Add the config disable check
+
 	// Init the frequency generator SI5351
-	LOG_I("SI5351 init: xtal:%d, correction:%d\n", SI5351_XTAL_FREQ, config.freq_cal_factor);
+	LOG_I("SI5351 init: xtal:%d, correction:%d\n", config.si5351_xtal_freq, config.si5351_calibration);
 
 	ssd1306_printf_P(1000, PSTR("SI5351\nSetup"));
 
 	// TCXO input to xtal pin 1?
-	if ( si5351.init(SI5351_CRYSTAL_LOAD_8PF, SI5351_XTAL_FREQ, config.freq_cal_factor) )
+	if ( si5351_clockgen.init(SI5351_CRYSTAL_LOAD_8PF, config.si5351_xtal_freq, config.si5351_calibration) )
 	{
 		// Disable the clock initially...
-		wspr_tx_disable(SI5351_CLK0);
-		wspr_tx_disable(SI5351_CLK1);
-		wspr_tx_disable(SI5351_CLK2);
+		wspr_tx_disable();
 
 		ssd1306_printf_P(1000, PSTR("SI5351\nOk"));
 	}
@@ -40,10 +41,10 @@ void setup_si5351()
 
 #ifdef FEATURE_CARRIER
 	LOG_I("CW Carrier on: %fMHz (CLK%d)\n", (float)CARRIER_FREQUENCY/1e6, CARRIER_SI5351_CLK);
-	si5351.set_freq( SI5351_FREQ_MULT * CARRIER_FREQUENCY, CARRIER_SI5351_CLK );
-	si5351.drive_strength( CARRIER_SI5351_CLK, SI5351_DRIVE_8MA );		// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
-	si5351.set_clock_pwr( CARRIER_SI5351_CLK, 1);
-	si5351.output_enable( CARRIER_SI5351_CLK, 1);
+	si5351_clockgen.set_freq( SI5351_FREQ_MULT * CARRIER_FREQUENCY, CARRIER_SI5351_CLK );
+	si5351_clockgen.drive_strength( CARRIER_SI5351_CLK, SI5351_DRIVE_8MA );		// 2mA= dBm, 4mA=3dBm, 6mA= dBm, 8mA=10dBm
+	si5351_clockgen.set_clock_pwr( CARRIER_SI5351_CLK, 1);
+	si5351_clockgen.output_enable( CARRIER_SI5351_CLK, 1);
 #endif
 }
 
@@ -71,7 +72,7 @@ bool si5351_ready()
 		return false;
 	}
 
-	reg_val = si5351.si5351_read(SI5351_DEVICE_STATUS);
+	reg_val = si5351_clockgen.si5351_read(SI5351_DEVICE_STATUS);
 	reg_val &= 0b11100000;	// SYS_INIT | LOL_A | LOL_B
 	if (reg_val)
 	{

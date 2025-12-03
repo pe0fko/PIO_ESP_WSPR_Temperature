@@ -453,8 +453,6 @@ void setup()
 	pinMode(BUTTON_INPUT, INPUT_PULLUP);		// Button for display on/off
 	ssd1306_display_on();						// Start the display ON timer
 
-//  Serial.println("=====================================: 1 :----------------");
-
 	pinMode(LED_BUILTIN, OUTPUT);				// BuildIn LED
 
 	ssd1306_text(1000, "Hostname", HostName.c_str());
