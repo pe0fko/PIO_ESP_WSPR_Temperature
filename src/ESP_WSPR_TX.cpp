@@ -254,77 +254,8 @@ void setup()
 	LOG_I("=== Start looping...\n");
 }
 
-#if 0
-
 bool loadWebConfig(JsonDocument& doc) 
 {
-#if 1
-	String URL("https://pe0fko.nl/wspr/id/client_");	// HTTPS gives problems with certs
-	URL += String(ESP.getChipId(), 10);
-	URL += "_NL.json";
-#else
-	String URL("https://pe0fko.nl/wspr/id/prod_NL.json");	// HTTPS gives problems with certs
-#endif
-
-	Serial.printf("Free heap before HTTPS: %d\n", ESP.getFreeHeap());	
-
-	HTTPClient http;
-	WiFiClientSecure client;
-
-	http.begin(client, URL);
-
-	http.setReuse(false);	// Do not reuse the connection
-	http.setTimeout(10000);	// Set the timeout to 10 seconds
-	// http.setConnectTimeout(10000);	// Set the connect timeout to 10 seconds
-	http.collectHeaders(nullptr, 0);  // Negeer alle headers
-	http.setUserAgent("PE0FKO Lib");
-	// http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);	// Do not follow redirects
-	// http.setRedirectLimit(0);	// Do not follow redirects
-	// http.setUseHTTP10(true);	// Use HTTP/1.0 instead of HTTP/1.1
-	// http.setAuthorization("username", "password");	// Set the username and password for basic authentication
-	http.addHeader("Accept", "application/json");	// Set the Accept header to application/json
-	// http.addHeader("Content-Type", "application/json");	// Set the Content-Type header to application/json
-	// http.addHeader("User-Agent", "PE0FKO Lib QTHLocator");	// Set the User-Agent header to PE0FKO Lib QTHLocator
-
-  	client.setInsecure();	// Skip certificate verificatie
-
-
-	int httpCode = http.GET();
-	if (httpCode == HTTP_CODE_OK) 
-	{
-		WiFiClient* stream = http.getStreamPtr();
-		DeserializationError error = deserializeJson(doc, *stream);
-		http.end();
-
-		if (error) 
-		{
-			LOG_E("Error Json deserialize: %s\n", error.f_str());
-			ssd1306_printf_P(5000, PSTR("JSON\nDeserialize\nError"));		// 5sec wait
-			return false;
-		}
-
-		Serial.printf("Free heap after HTTPS: %d\n", ESP.getFreeHeap());
-
-		return true;
-	} else 
-	{
-		LOG_E("Error https GET, from: %s, HTTP code: %d\n", URL.c_str(), httpCode);
-		ssd1306_printf_P(5000, PSTR("JSON\nERROR\nWebpage-Get"));	// 5sec wait
-	}
-  
-	http.end();
-
-	Serial.printf("Free heap after HTTPS error: %d\n", ESP.getFreeHeap());
-	return false;
-}
-
-#elif 1
-
-bool loadWebConfig(JsonDocument& doc) 
-{
-	// page.clear();
-	// page.reserve(4096);		// Increase buffer size to 4kB.
-
 	String URL("https://pe0fko.nl/wspr/id/client_");
 	URL += String(ESP.getChipId(), 10);
 	URL += "_NL.json";
@@ -341,37 +272,10 @@ bool loadWebConfig(JsonDocument& doc)
 	}
 	return true;
 }
-#else
-
-bool loadJsonConfig(String& page)
-{
-	// page.clear();
-	// page.reserve(4096);		// Increase buffer size to 4kB.
-
-	String URL("https://pe0fko.nl/wspr/id/client_");
-	URL += String(ESP.getChipId(), 10);
-	URL += "_NL.json";
-
-	if (QTH.fetchWebPage(page, URL) != HTTP_CODE_OK) 
-	{
-		LOG_E("Error loading web config, from: %s\n", URL.c_str());
-		ssd1306_printf_P(1000, PSTR("JSON\nERROR\nWebpage-Load"));	// 1sec wait
-		// ESP.restart();	// Restart ESP, no return
-		// return false; --- IGNORE ---
-		if (timer_ms_reboot == 0)
-			timer_ms_reboot = millis() + 1000*60*5;		// Reboot in 5 min
-		return false;
-	}
-	return true;
-}
-#endif
 
 //---------------------------------------------------------------------------------
 //---- JSON SET CONFIG....  JSON SET CONFIG....  JSON SET CONFIG....  JSON SET CONFIG....
 //---------------------------------------------------------------------------------
-
-#if 1
-
 void jsonParseConfig(JsonDocument& jsonDoc)
 {
 	// LOG_I("JSON:"); serializeJson(jsonDoc, Serial);	LOG_I("\n");
@@ -412,6 +316,7 @@ void jsonParseConfig(JsonDocument& jsonDoc)
 	config.temp_clk					= temp["clk"]				| SI5351_CLK0;
 	config.temp_offset				= temp["offset"]			| 0.0;
 
+
 	if (config.si5351_drive_strength < 2 || config.si5351_drive_strength > 8)
 		config.si5351_drive_strength = 8;
 	if (config.si5351_xtal_freq < 10000000 || config.si5351_xtal_freq > 40000000)
@@ -437,27 +342,31 @@ void jsonParseConfig(JsonDocument& jsonDoc)
 		config.wspr_tone_mul = 1.0;
 
 	// Display the config data
-	//=========================================================
-	LOG_I("INIT: Wspr call sign   		: %s\n",			config.user_call.c_str());
-	LOG_I("INIT: Wspr call prefix 		: %s\n",			config.user_prefix.c_str());
-	LOG_I("INIT: Wspr call suffix 		: %s\n",			config.user_suffix.c_str());
-	LOG_I("INIT: Wspr qth locator 		: %s\n",			config.user_locator.c_str());
-	LOG_I("INIT: Wspr TX power    		: %ddBm\n",			config.user_power);
+	//==================================================================================
+	LOG_I("INIT: System version         : V%s\n",			config.system_version);
+	LOG_I("INIT: System ChipId          : %d%s\n",		config.system_chipid
+		, config.system_chipid != ESP.getChipId() ? " (wrong)" : "" );
+	LOG_I("INIT: System hostname        : %s.local\n",		config.system_hostname.c_str());
+	LOG_I("INIT: System display off     : %d sec\n",		config.system_display_off);
+	LOG_I("INIT: System random seed     : %d\n",			config.system_randomSeed);
 
-	LOG_I("INIT: Wspr TX hostname		: %s.local\n",		config.system_hostname.c_str());
-	LOG_I("INIT: Display auto off 		: %d sec\n",		config.system_display_off);
+	LOG_I("INIT: Wspr call sign         : %s\n",			config.user_call.c_str());
+	LOG_I("INIT: Wspr call prefix       : %s\n",			config.user_prefix.c_str());
+	LOG_I("INIT: Wspr call suffix       : %s\n",			config.user_suffix.c_str());
+	LOG_I("INIT: Wspr qth locator       : %s\n",			config.user_locator.c_str());
+	LOG_I("INIT: Wspr TX power          : %ddBm\n",			config.user_power);
 
-	LOG_I("INIT: Si5351 enable  		: %d\n",			config.si5351_enable);
-	LOG_I("INIT: Si5351 xtal freq		: %d Hz\n",			config.si5351_xtal_freq);
-	LOG_I("INIT: Freq call factor		: %ld ppm\n", 			config.si5351_calibration);
-	LOG_I("INIT: SI5351 drive strength	: %d mA\n",			config.si5351_drive_strength);	// mA
+	LOG_I("INIT: Si5351 enable          : %d\n",			config.si5351_enable);
+	LOG_I("INIT: Si5351 xtal freq       : %d Hz\n",			config.si5351_xtal_freq);
+	LOG_I("INIT: Si5351 callibration    : %ld ppm\n", 		config.si5351_calibration);
+	LOG_I("INIT: SI5351 drive strength  : %d mA\n",			config.si5351_drive_strength);	// mA
 
-	LOG_I("INIT: WSPR TX Enable			: %d\n",			config.wspr_enable);
-	LOG_I("INIT: WSPR TX Band Freq		: %.2f Hz\n",		config.wspr_band_freq);
-	LOG_I("INIT: WSPR TX Tone Multiply	: %f\n",			config.wspr_tone_mul);
+	LOG_I("INIT: WSPR TX Enable         : %d\n",			config.wspr_enable);
+	LOG_I("INIT: WSPR TX Band Freq      : %.2f Hz\n",		config.wspr_band_freq);
+	LOG_I("INIT: WSPR TX Tone Multiply  : %f\n",			config.wspr_tone_mul);
 
-	LOG_I("INIT: Temp TX Enable			: %d\n",			config.temp_enable);
-	LOG_I("INIT: Temp sensor offset		: %.1f °C\n",		config.temp_offset);
+	LOG_I("INIT: Temp TX Enable         : %d\n",			config.temp_enable);
+	LOG_I("INIT: Temp sensor offset     : %.1f °C\n",		config.temp_offset);
 
 	// Set the frequency correction value
 	si5351_clockgen.set_correction(config.si5351_calibration, si5351_pll_input::SI5351_PLL_INPUT_XO);
@@ -471,110 +380,6 @@ void jsonParseConfig(JsonDocument& jsonDoc)
 
 	setup_wspr_tx();	// Setup the WSPR TX parameters for the wspr_tone_mul
 }
-
-#else
-
-bool jsonSetConfig(String jsonString)
-{
-	// JsonDocument		jsonDoc;									// Allocate the JSON document
-	jsonDoc.clear();
-
-	DeserializationError error =  deserializeJson(jsonDoc, jsonString);
-	if (error != DeserializationError::Ok) {
-		LOG_E("Error Json Seserialize: %s\n", error.f_str());
-		ssd1306_printf_P(1000, PSTR("JSON\nFormat\nERROR"));	// 1sec wait
-		if (timer_ms_reboot == 0)
-			timer_ms_reboot = millis() + 1000*60*5;					// Reboot in 5 min
-		return false;
-	}
-
-	// LOG_I("JSON:"); serializeJson(jsonDoc, Serial);	LOG_I("\n");
-
-	// Parse System configuratie
-	JsonObject system = jsonDoc["system"];
-	config.system_version			= system["version"]			| String("1.0.0");
-	config.system_chipid			= system["chipid"]			| ESP.getChipId();
-	config.system_hostname			= system["hostname"]		| String(HOSTNAME);
-	config.system_display_off		= system["display_off"]		| 120;
-	config.system_randomSeed		= system["random_seed"]		| 19570215;
-
-	// Parse SI5351 configuratie
-	JsonObject si5351 = jsonDoc["si5351"];
-	config.si5351_enable			= si5351["enable"]			| true;
-	config.si5351_drive_strength	= si5351["drive_strength"]	| 8;		// Drive strength: 2,4,6 or 8 (mA)   SI5351_CRYSTAL_LOAD_8PF
-	config.si5351_calibration		= si5351["calibration"]		| 0.0;
-	config.si5351_xtal_freq			= si5351["xtal_freq"]		| SI5351_XTAL_FREQ;
-
-	// Parse User configuratie
-	JsonObject user = jsonDoc["user"];
-	config.user_call				= user["call"]				| String("PE0xxx");
-	config.user_prefix				= user["prefix"]			| String("");
-	config.user_suffix				= user["suffix"]			| String("");
-	config.user_locator				= user["locator"]			| String("JO32");
-	config.user_power				= user["power"]				| 10;
-
-	// Parse WSPR configuratie
-	JsonObject wspr = jsonDoc["wspr"];
-	config.wspr_enable				= wspr["enable"]			| true;
-	config.wspr_band_freq			= wspr["band_freq"]			| 0.00;	// 0.00 = random
-	config.wspr_tone_mul			= wspr["test_tone_mul"]		| 1.0;	// 1.0 = normal
-
-	// Parse Temperature configuratie
-	JsonObject temp = jsonDoc["temperature"];
-	config.temp_enable				= temp["enable"]			| false;
-	config.temp_band				= temp["band"]				| WSPR_TX_NONE;
-	config.temp_clk					= temp["clk"]				| SI5351_CLK0;
-	config.temp_offset				= temp["offset"]			| 0.0;
-
-	// Add the slash char if needed in prefix & suffix
-	if (config.user_prefix.length() != 0 && config.user_prefix.indexOf('/') == -1) 
-		config.user_prefix += '/';
-	if (config.user_suffix.length() != 0 && config.user_suffix.indexOf('/') == -1) 
-		config.user_suffix = "/" + config.user_suffix;
-// power limits
-	if (config.wspr_band_freq < 20.0 || config.wspr_band_freq > 180.0)
-		config.wspr_band_freq = 0.0;
-	if (config.wspr_tone_mul < 1.0 || config.wspr_tone_mul > 4.0)
-		config.wspr_tone_mul = 1.0;
-
-	// Display the config data
-	//=========================================================
-	LOG_I("INIT: Wspr call sign   		: %s\n",			config.user_call.c_str());
-	LOG_I("INIT: Wspr call prefix 		: %s\n",			config.user_prefix.c_str());
-	LOG_I("INIT: Wspr call suffix 		: %s\n",			config.user_suffix.c_str());
-	LOG_I("INIT: Wspr qth locator 		: %s\n",			config.user_locator.c_str());
-	LOG_I("INIT: Wspr TX power    		: %ddBm\n",			config.user_power);
-
-	LOG_I("INIT: Wspr TX hostname		: %s.local\n",		config.system_hostname.c_str());
-	LOG_I("INIT: Display auto off 		: %d sec\n",		config.system_display_off);
-
-	LOG_I("INIT: Si5351 enable  		: %d\n",			config.si5351_enable);
-	LOG_I("INIT: Si5351 xtal freq		: %d Hz\n",			config.si5351_xtal_freq);
-	LOG_I("INIT: Freq call factor		: %ld ppm\n", 			config.si5351_calibration);
-	LOG_I("INIT: SI5351 drive strength	: %d mA\n",			config.si5351_drive_strength);	// mA
-
-	LOG_I("INIT: WSPR TX Enable			: %d\n",			config.wspr_enable);
-	LOG_I("INIT: WSPR TX Band Freq		: %.2f Hz\n",		config.wspr_band_freq);
-	LOG_I("INIT: WSPR TX Tone Multiply	: %f\n",			config.wspr_tone_mul);
-
-	LOG_I("INIT: Temp TX Enable			: %d\n",			config.temp_enable);
-	LOG_I("INIT: Temp sensor offset		: %.1f °C\n",		config.temp_offset);
-
-	// Set the frequency correction value
-	si5351_clockgen.set_correction(config.si5351_calibration, si5351_pll_input::SI5351_PLL_INPUT_XO);
-
-	if ( ! config.system_hostname.isEmpty() )
-	{
-		// LOG_I("INIT: hostname=%s\n", config.hostname.c_str());
-		WiFi.setHostname(config.system_hostname.c_str());					// Set WiFi Hostname.
-		MDNS.setHostname(config.system_hostname.c_str());					// Set mDNS hostname (for next setting)
-	}
-
-	setup_wspr_tx();	// Setup the WSPR TX parameters for the wspr_tone_mul
-
-	return true;
-}
-#endif
 
 //---------------------------------------------------------------------------------
 //---- LOOP....  LOOP....  LOOP....  LOOP....  LOOP....
@@ -656,32 +461,6 @@ void loop()
 			break;
 
 
-#if 0
-		case sLoadConfigJSon:
-		{	String page;
-			page.reserve(4096);		// Increase buffer size to 4kB.
-
-			setSlotTime();						// Get the current time and slot
-			ssd1306_printf_P(TW, PSTR("Web API\nLoad\nID:%d"), ESP.getChipId() );
-
-			if (loadJsonConfig(page)) {				// Load the config data
-				// LOG_I("JSON Config: %s\n", page.c_str());
-				if (jsonSetConfig(page)) {
-					state = sLoadIpLocation;
-					break;
-				} else {
-					ssd1306_printf_P(2000, PSTR("Web API\nJSON\nError") );
-				}
-			} else {
-				ssd1306_printf_P(2000, PSTR("Web API\nLOAD\nError") );
-			}
-
-			// Try sometime later to load the config
-			timer_retry_config_load = millis();
-			state = sWaitConfigReload;
-
-		}	break;
-#else
 		case sLoadConfigJSon:
 			Serial.printf("Free heap before loadConfigJSon: %d\n", ESP.getFreeHeap());	// TEST
 
@@ -702,7 +481,7 @@ void loop()
 
 			Serial.printf("Free heap after loadConfigJSon: %d\n", ESP.getFreeHeap());	// TEST
 			break;
-#endif
+
 
 		case sWaitConfigReload:
 			if ((millis() - timer_retry_config_load) > 30*1000)	{	// Wait 30 seconds

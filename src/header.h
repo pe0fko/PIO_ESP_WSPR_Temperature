@@ -16,10 +16,12 @@
 //
 #define		VERSION		"V6.0"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <Arduino.h>
 #include <coredecls.h>
 #include <time.h>
+#include <Ticker.h>
 #include <TZ.h>
 #include <sntp.h>
 #include <ESP8266WiFi.h>
@@ -112,7 +114,8 @@ extern		Adafruit_SSD1306	display;
 extern		Si5351				si5351_clockgen;
 
 const		uint32_t			value_ms_20ms_loop		= 20;				// 20ms interval check time ntp sec
-const		uint32_t			value_us_wspr_bit		= 8192.0 / 12000.0 * 1000000.0;	 // Delay value for WSPR
+// const		uint32_t			value_us_wspr_bit		= 8192.0 / 12000.0 * 1000000.0;	 // Delay value for WSPR
+const		uint32_t			value_ms_wspr_bit		= 8192.0 / 12000.0 * 1000.0;	 // Delay ms value for WSPR
 const		uint32_t			value_us_one_second		= 1000000UL;		// micro second (us)
 const		uint32_t			value_no_network		= 4 * 60 * 1000;	// 4 min (ntp must be init updated in this time)
 const		uint32_t			value_ms_led_blink_on	= 3141UL;			// 4sec interval blink led

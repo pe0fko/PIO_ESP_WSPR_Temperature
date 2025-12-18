@@ -30,8 +30,9 @@
 #include "header.h"
 
 static	JTEncode	wspr;
+Ticker	wsprTicker;												// WSPR TX ticker
 
-static	uint32_t	timer_us_wspr_bit		= 0;
+// static	uint32_t	timer_us_wspr_bit		= 0;
 
 uint8_t				wspr_symbols[WSPR_SYMBOL_COUNT];
 uint32_t			wspr_symbol_index		= 0;
@@ -73,66 +74,70 @@ void setup_wspr_tx()
 
 void loop_wspr_tx()
 {
-	// Send the WSPR bits into the air if active TX!
-	// When started it will wait for the bit time and start a next bit.
+// 	// Send the WSPR bits into the air if active TX!
+// 	// When started it will wait for the bit time and start a next bit.
 
-#ifdef FEATURE_CHECK_TIMING
-	if (wspr_symbol_index != 0) 
-	{
-		uint32_t	diff = micros() - timer_us_wspr_bit;
-		if (diff >= value_us_wspr_bit)
-		{
-			timer_us_wspr_bit += value_us_wspr_bit;
-			wspr_tx_bit();										// Ok, transmit the net tone bit
+// #ifdef FEATURE_CHECK_TIMING
+// 	if (wspr_symbol_index != 0) 
+// 	{
+// 		uint32_t	diff = micros() - timer_us_wspr_bit;
+// 		if (diff >= value_us_wspr_bit)
+// 		{
+// 			timer_us_wspr_bit += value_us_wspr_bit;
+// 			wspr_tx_bit();										// Ok, transmit the net tone bit
 
-			if (diff >= (value_us_wspr_bit+500UL))
-			{
-				LOG_I("WSPT-Bit %u overflow %d us.\n", wspr_symbol_index, diff - value_us_wspr_bit);
-			}
-		}
-	}
-#else
-	if ((wspr_symbol_index != 0) 
-	&&  (micros() - timer_us_wspr_bit) >= value_us_wspr_bit)
-	{
-		timer_us_wspr_bit += value_us_wspr_bit;
-		wspr_tx_bit();											// Ok, transmit the next tone bit
-	}
-#endif
+// 			if (diff >= (value_us_wspr_bit+500UL))
+// 			{
+// 				LOG_I("WSPT-Bit %u overflow %d us.\n", wspr_symbol_index, diff - value_us_wspr_bit);
+// 			}
+// 		}
+// 	}
+// #else
+// 	if ((wspr_symbol_index != 0) 
+// 	&&  (micros() - timer_us_wspr_bit) >= value_us_wspr_bit)
+// 	{
+// 		timer_us_wspr_bit += value_us_wspr_bit;
+// 		wspr_tx_bit();											// Ok, transmit the next tone bit
+// 	}
+// #endif
 }
 
 void wspr_tx_init(const char* call)
 {
-	timer_us_wspr_bit = micros();		// Start timer close to the 1sec tick
-
-	if (si5351_ready())
+	if (wsprTicker.active())
 	{
-		LOG_I("WSPR TX Init: Hour:%2u Slot:%2u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%.2f)Hz, Power=%ddBm, Drive=%d\n", 
-			hour_now, slot_now, 
-			call,
-			config.user_locator.c_str(),
-			wspr_slot_freq[slot_now][0],
-			wspr_slot_freq[slot_now][1],
-			wspr_slot_freq[slot_now][2],
-			wspr_slot_band[slot_now] / (float)SI5351_FREQ_MULT,
-			config.user_power,
-			config.si5351_drive_strength
-		);
-
-		wspr.wspr_encode(call, config.user_locator.c_str(), config.user_power, wspr_symbols);
-
-#ifdef FEATURE_PRINT_WSPR_SIMBOLS
-		print_wspr_symbols(call, config.user_locator.c_str(), config.user_power, wspr_symbols);
-#endif
-
-		// timer_us_wspr_bit = micros();
-		// wspr_symbol_index = 0;
-		wspr_tx_bit();
+		LOG_W("WSPR TX already active, ignoring init request.\n");
+		return;
 	}
-	else
+
+	if (!si5351_ready())
 	{
 		LOG_E("WSPR TX not started, SI5351 not ready.\n");
+		return;
 	}
+
+	wspr.wspr_encode(call, config.user_locator.c_str(), config.user_power, wspr_symbols);
+
+	// timer_us_wspr_bit = micros();		// Start timer close to the 1sec tick
+
+	wsprTicker.attach_ms(value_ms_wspr_bit, wspr_tx_bit);	// Start WSPR TX ticker in system context
+	wspr_tx_bit();											// Start the wspr TX for 110.592 sec
+
+	LOG_I("WSPR TX Init: Hour:%2u Slot:%2u, CALL=%s, QTH=%s, Freq=%d/%d/%d(+%.2f)Hz, Power=%ddBm, Drive=%d\n", 
+		hour_now, slot_now, 
+		call,
+		config.user_locator.c_str(),
+		wspr_slot_freq[slot_now][0],
+		wspr_slot_freq[slot_now][1],
+		wspr_slot_freq[slot_now][2],
+		wspr_slot_band[slot_now] / (float)SI5351_FREQ_MULT,
+		config.user_power,
+		config.si5351_drive_strength
+	);
+
+#ifdef FEATURE_PRINT_WSPR_SIMBOLS
+	print_wspr_symbols(call, config.user_locator.c_str(), config.user_power, wspr_symbols);
+#endif
 }
 
 #ifdef FEATURE_PRINT_WSPR_SIMBOLS
@@ -162,9 +167,12 @@ void wspr_tx_bit()
 			// gettimeofday(&tv, NULL);					// Get the current time in sec and usec
 			// LOG_D("WSPR start time [%ld us] %s", tv.tv_usec, ctime(&tv.tv_sec));
 			// // DEBUG ///////////////////////////////////////////////////////////////////////////////////////////////////
+
 			wspr_tx_enable(SI5351_CLK0);
 			wspr_tx_enable(SI5351_CLK1);
 			wspr_tx_enable(SI5351_CLK2);
+
+			// LOG_D("TX WSPR #%d Started.\n", wspr_tx_counter);
 		}
 
 		wspr_tx_freq(SI5351_CLK0);
@@ -175,10 +183,10 @@ void wspr_tx_bit()
 	}
 	else
 	{
-		wspr_tx_disable();
-
+		wspr_tx_disable();											// Disable the WSPR TX Si5351
 		wspr_symbol_index = 0;
 		wspr_tx_counter += 1;
+		wsprTicker.detach();										// Stop WSPR TX ticker
 
 		// LOG_D("TX WSPR #%d Ended.\n", wspr_tx_counter);
 	}
@@ -259,3 +267,184 @@ void wspr_tx_disable()
 	si5351_clockgen.output_enable(SI5351_CLK2, 0);
 	si5351_clockgen.set_clock_pwr(SI5351_CLK2, 0);
 }
+
+
+/*
+
+//
+// Task to handle WSPR TX
+void WsprTask( void * pvParameters )
+{
+	(void) pvParameters;
+
+	for( ;; )
+	{
+		loop_wspr_tx();
+
+		vTaskDelay(1 / portTICK_PERIOD_MS);		// Yield to other tasks
+	}
+}
+
+
+// TaskHandle_t WsprTaskHandle;
+// xTaskCreate(WsprTask, "WsprTask", 2048, NULL, 1, &WsprTaskHandle);
+
+
+
+
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "esp_system.h"
+
+// Semafoor handles
+SemaphoreHandle_t binary_semaphore;
+SemaphoreHandle_t mutex_semaphore;
+SemaphoreHandle_t counting_semaphore;
+
+// Gedeelde resource
+int shared_counter = 0;
+
+// Task die binaire semafoor geeft
+void trigger_task(void *pvParameters)
+{
+    int count = 0;
+    
+    while(1) {
+        printf("Trigger Task: Geef semafoor signaal (%d)\n", count++);
+        xSemaphoreGive(binary_semaphore);
+        
+        vTaskDelay(3000 / portTICK_PERIOD_MS);
+    }
+}
+
+// Task die wacht op binaire semafoor
+void wait_task(void *pvParameters)
+{
+    while(1) {
+        printf("Wait Task: Wacht op semafoor...\n");
+        
+        if(xSemaphoreTake(binary_semaphore, portMAX_DELAY) == pdTRUE) {
+            printf("  --> Wait Task: Semafoor ontvangen! Voer actie uit.\n");
+            // Doe iets belangrijks hier
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+        }
+    }
+}
+
+// Task die gedeelde resource gebruikt (met mutex)
+void resource_task_1(void *pvParameters)
+{
+    while(1) {
+        // Vraag mutex aan
+        if(xSemaphoreTake(mutex_semaphore, 1000 / portTICK_PERIOD_MS) == pdTRUE) {
+            printf("Task 1: Mutex verkregen, counter = %d\n", shared_counter);
+            
+            // Kritieke sectie - wijzig gedeelde variabele
+            shared_counter++;
+            vTaskDelay(100 / portTICK_PERIOD_MS); // Simuleer werk
+            printf("Task 1: Counter verhoogd naar %d\n", shared_counter);
+            
+            // Geef mutex vrij
+            xSemaphoreGive(mutex_semaphore);
+        } else {
+            printf("Task 1: Timeout bij wachten op mutex\n");
+        }
+        
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+
+// Tweede task die dezelfde resource gebruikt
+void resource_task_2(void *pvParameters)
+{
+    while(1) {
+        if(xSemaphoreTake(mutex_semaphore, 1000 / portTICK_PERIOD_MS) == pdTRUE) {
+            printf("Task 2: Mutex verkregen, counter = %d\n", shared_counter);
+            
+            shared_counter += 10;
+            vTaskDelay(150 / portTICK_PERIOD_MS);
+            printf("Task 2: Counter verhoogd naar %d\n", shared_counter);
+            
+            xSemaphoreGive(mutex_semaphore);
+        } else {
+            printf("Task 2: Timeout bij wachten op mutex\n");
+        }
+        
+        vTaskDelay(1500 / portTICK_PERIOD_MS);
+    }
+}
+
+// Producer voor counting semaphore
+void producer_task(void *pvParameters)
+{
+    int item = 0;
+    
+    while(1) {
+        printf("Producer: Produceer item %d\n", item);
+        
+        // Geef counting semafoor (max 5 items)
+        if(xSemaphoreGive(counting_semaphore) == pdTRUE) {
+            printf("  --> Item %d toegevoegd\n", item);
+            item++;
+        } else {
+            printf("  --> Buffer vol! Kan niet produceren\n");
+        }
+        
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+
+// Consumer voor counting semaphore
+void consumer_task(void *pvParameters)
+{
+    while(1) {
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        
+        // Neem counting semafoor
+        if(xSemaphoreTake(counting_semaphore, 500 / portTICK_PERIOD_MS) == pdTRUE) {
+            printf("Consumer: Item geconsumeerd\n");
+            vTaskDelay(500 / portTICK_PERIOD_MS); // Simuleer verwerking
+        } else {
+            printf("Consumer: Geen items beschikbaar\n");
+        }
+    }
+}
+
+void app_main()
+{
+    printf("\n=== ESP8266 Semafoor Voorbeelden ===\n\n");
+    
+    // Maak binaire semafoor (voor signalering)
+    binary_semaphore = xSemaphoreCreateBinary();
+    
+    // Maak mutex (voor gedeelde resources)
+    mutex_semaphore = xSemaphoreCreateMutex();
+    
+    // Maak counting semaphore (max 5 items)
+    counting_semaphore = xSemaphoreCreateCounting(5, 0);
+    
+    if(binary_semaphore == NULL || mutex_semaphore == NULL || counting_semaphore == NULL) {
+        printf("FOUT: Semaforen aanmaken mislukt!\n");
+        return;
+    }
+    
+    printf("--- Binaire Semafoor Test ---\n");
+    xTaskCreate(trigger_task, "TriggerTask", 2048, NULL, 5, NULL);
+    xTaskCreate(wait_task, "WaitTask", 2048, NULL, 5, NULL);
+    
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    
+    printf("\n--- Mutex Test (Gedeelde Resource) ---\n");
+    xTaskCreate(resource_task_1, "ResourceTask1", 2048, NULL, 5, NULL);
+    xTaskCreate(resource_task_2, "ResourceTask2", 2048, NULL, 5, NULL);
+    
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    
+    printf("\n--- Counting Semafoor Test (Producer/Consumer) ---\n");
+    xTaskCreate(producer_task, "ProducerTask", 2048, NULL, 5, NULL);
+    xTaskCreate(consumer_task, "ConsumerTask", 2048, NULL, 5, NULL);
+}
+
+*/
